@@ -77,6 +77,13 @@ function check(label, cond, detail = "") {
 	const afterReload = await page.evaluate(() => window.__h.renderedNoteInfo());
 	check("重开后批注矩形/图标仍渲染", afterReload.rects >= 1 && afterReload.icons === 1);
 
+	// Confirm the visible disclosure before the mocked AI request.
+	page.once("dialog", async dialog => {
+		check("AI 首次发送提示显示接收方和数据范围", dialog.type() === "confirm" &&
+			dialog.message().includes("https://mock.local/v1/chat/completions") &&
+			dialog.message().includes("对话历史") && dialog.message().includes("data.json"));
+		await dialog.accept();
+	});
 	// 4) translate with mocked SSE
 	const tr = await page.evaluate(async () => {
 		const p = window.__h.selectText("Domain-Rule-Augmented", 0, 15);

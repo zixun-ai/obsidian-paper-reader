@@ -30,6 +30,7 @@ Select text to annotate it. The pencil toggles ink mode; Escape exits. Use Cmd/C
 - Reading and annotation work offline. This plugin contains no telemetry or advertisements.
 - Annotations are stored in a sibling `*.annotations.json` file; they are **not embedded in the PDF**. Exported notes are saved as sibling `*.notes.md` files. Back up these sidecars with your PDF.
 - Reading positions and settings are stored in the plugin's `data.json`.
+- Remote AI endpoints must use HTTPS; HTTP is allowed only for localhost, 127.0.0.1, and ::1. Before the first request in each reader window (and after changing endpoints), a confirmation explains the destination and data sent. Data goes directly to the configured provider, not a developer-operated relay.
 - AI is optional. It requires an endpoint, model, and API key you supply. The provider may require an account and charge for usage. On an explicit AI action, selected text, configured surrounding context (which may include page text), questions, and conversation history are sent to that endpoint. The connection test also sends a request. Your provider's privacy terms apply.
 - The API key is stored in plaintext in `data.json`, not a secure keychain. Vault synchronization or backups that include this file may copy it. Never publish it or attach it to a bug report.
 - No access to files outside the vault is required for normal use.

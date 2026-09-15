@@ -175,6 +175,7 @@ export class PaperReaderSettingTab extends PluginSettingTab {
 			);
 		new Setting(containerEl)
 			.setName("API Key")
+			.setDesc("密钥明文保存在插件 data.json 中，不是安全钥匙串。同步、备份或分享配置可能包含密钥，请勿公开上传。")
 			.addText((text) => {
 				text.inputEl.type = "password";
 				text

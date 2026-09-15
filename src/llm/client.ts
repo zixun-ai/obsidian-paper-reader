@@ -24,7 +24,17 @@ export class LlmError extends Error {
 const REQUEST_TIMEOUT_MS = 120_000;
 
 function chatCompletionsUrl(baseUrl: string): string {
-	return baseUrl.replace(/\/+$/, "") + "/chat/completions";
+	let url: URL;
+	try { url = new URL(baseUrl); } catch {
+		throw new LlmError("config", "接口地址无效，请填写完整的 HTTPS URL");
+	}
+	const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+	if ((url.protocol !== "https:" && !(url.protocol === "http:" && local)) ||
+		url.username || url.password || url.search || url.hash) {
+		throw new LlmError("config", "远程接口必须使用 HTTPS；仅本机地址允许 HTTP。地址不能包含账号、密码、查询参数或片段。");
+	}
+	url.pathname = url.pathname.replace(/\/+$/, "") + "/chat/completions";
+	return url.href;
 }
 
 async function httpError(status: number, body: string): Promise<LlmError> {
@@ -47,7 +57,20 @@ async function httpError(status: number, body: string): Promise<LlmError> {
  * Obsidian requestUrl with a non-streaming request, delivered as one chunk.
  */
 export class LlmClient {
+	private approvedEndpoint = "";
 	constructor(private getConfig: () => LlmConfig) {}
+
+	private confirmSending(config: LlmConfig): void {
+		const endpoint = chatCompletionsUrl(config.baseUrl);
+		if (this.approvedEndpoint === endpoint) return;
+		if (!window.confirm(
+			`允许向以下 AI 接口发送数据吗？\n${endpoint}\n\n` +
+			"AI 操作会发送选中文字、所选上下文（可能含页面或更多论文内容）、问题和对话历史，以及 API Key。连接测试仅发送测试文字和密钥。\n" +
+			"数据直接交给该接口服务商，不经过 Paper Reader 开发者服务器；服务商的数据政策和费用适用。请勿发送无权分享的敏感内容。\n\n" +
+			"密钥明文保存在插件 data.json，同步或分享配置可能带出密钥。允许后，本阅读窗口内同一接口不再提示。"
+		)) throw new LlmError("config", "已取消 AI 数据发送");
+		this.approvedEndpoint = endpoint;
+	}
 
 	private ensureConfig(): LlmConfig {
 		const c = this.getConfig();
@@ -57,11 +80,13 @@ export class LlmClient {
 				"请先在 设置 → Paper Reader 中填写 Base URL / API Key / 模型名"
 			);
 		}
-		return c;
+		chatCompletionsUrl(c.baseUrl);
+		return { ...c };
 	}
 
 	async *streamChat(messages: ChatMessage[]): AsyncGenerator<string> {
 		const config = this.ensureConfig();
+		this.confirmSending(config);
 		let yielded = false;
 		try {
 			for await (const chunk of this.streamViaFetch(config, messages)) {
@@ -91,6 +116,7 @@ export class LlmClient {
 				},
 				body: JSON.stringify({ model: config.model, messages, stream: true }),
 				signal: ctrl.signal,
+				redirect: "error",
 			});
 			if (!resp.ok) {
 				throw await httpError(resp.status, await resp.text());
@@ -161,6 +187,7 @@ export class LlmClient {
 		let config: LlmConfig;
 		try {
 			config = this.ensureConfig();
+			this.confirmSending(config);
 		} catch (e) {
 			return { ok: false, error: (e as Error).message };
 		}
