@@ -734,22 +734,24 @@
 
 .pr-note-icon {
 	position: absolute;
-	width: 14px;
-	height: 14px;
+	width: 18px;
+	height: 18px;
+	padding: 2px;
+	box-shadow: none;
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	color: var(--text-muted);
-	background: var(--background-primary);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: 50%;
+	background: transparent;
+	border: none;
+	border-radius: 3px;
 	cursor: pointer;
 	pointer-events: auto;
 }
 
 .pr-note-icon svg {
-	width: 9px;
-	height: 9px;
+	width: 14px;
+	height: 14px;
 }
 
 .pr-note-icon:hover {

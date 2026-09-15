@@ -91,7 +91,7 @@ export function renderHighlightRects(
 		// note marker icon at the end of the last rect
 		if (ann.type === "note" && ann.rects.length > 0) {
 			const last = ann.rects[ann.rects.length - 1];
-			const icon = layerEl.createSpan({ cls: "pr-note-icon" });
+			const icon = layerEl.createEl("button", { cls: "pr-note-icon", attr: { "aria-label": "编辑或删除批注", title: ann.note ?? "批注" } });
 			setIcon(icon, "message-square");
 			icon.style.left = `${(last.x + last.width) * scale + 2}px`;
 			icon.style.top = `${last.y * scale - 2}px`;

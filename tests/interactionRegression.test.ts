@@ -118,3 +118,26 @@ test("real submitNote: failed add/edit keeps draft, emits no success, retry save
 	assert.equal(hidden, true);
 	assert.deepEqual(notices, ["批注已更新"]);
 });
+
+test("note deletion preserves draft on save failure and records undo after success", async () => {
+ const { PaperReaderView } = load("src/pdfview/PaperReaderView.ts");
+ const note = { id: "note", type: "note", note: "keep me" };
+ const other = { id: "highlight" };
+ let saved = false, hidden = false;
+ const history: any[] = [];
+ const view = Object.create(PaperReaderView.prototype);
+ Object.assign(view, {
+  file: {}, data: { annotations: [note, other] }, editingNoteId: "note", activeAnnotationId: "highlight",
+  persistAndRefresh: async () => saved,
+  history: { push: (op: any) => history.push(op) },
+  popup: { hide: () => { hidden = true; } }, hlMenu: { hide() {} },
+ });
+ await view.deleteHighlight("note");
+ assert.deepEqual(view.data.annotations, [note, other]);
+ assert.equal(hidden, false); assert.equal(history.length, 0);
+ saved = true; await view.deleteHighlight("note");
+ assert.deepEqual(view.data.annotations, [other]);
+ assert.equal(hidden, true); assert.equal(view.editingNoteId, null);
+ assert.equal(history[0].kind, "remove");
+ assert.equal(history[0].anns[0], note); assert.equal(history[0].indexes[0], 0);
+});

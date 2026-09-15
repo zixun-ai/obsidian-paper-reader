@@ -14,6 +14,7 @@ export interface SelectionPopupDeps {
 	copySelection: () => void;
 	/** create note from selection, or update edit target's note text */
 	submitNote: (text: string) => Promise<boolean>;
+	deleteAnnotation?: (id: string) => Promise<void>;
 	/** stream a translation; onChunk receives the full text so far */
 	translate: (payload: SelectionPayload, onChunk: (full: string) => void) => Promise<string>;
 	insertTranslation: (translation: string) => Promise<void>;
@@ -185,12 +186,22 @@ export class SelectionPopup {
 			e.stopPropagation();
 		});
 		const addBtn = actionsRow.createEl("button", { cls: "pr-popup-btn" });
-		setIcon(addBtn, "plus");
-		addBtn.setAttr("aria-label", "添加批注");
+		setIcon(addBtn, this.editTarget ? "check" : "plus");
+		addBtn.setAttr("aria-label", this.editTarget ? "保存批注" : "添加批注");
 		addBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
 			submit();
 		});
+
+		if (this.editTarget && this.deps.deleteAnnotation) {
+			const id = this.editTarget.id;
+			const del = actionsRow.createEl("button", { cls: "pr-popup-btn", text: "删除批注" });
+			del.setAttr("aria-label", "删除批注");
+			del.addEventListener("click", (e) => {
+				e.stopPropagation();
+				void this.deps.deleteAnnotation!(id);
+			});
+		}
 
 		// row 4: translation (only for fresh selections)
 		if (!this.editTarget) {

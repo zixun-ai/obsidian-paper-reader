@@ -130,6 +130,7 @@ export class PaperReaderView extends ItemView {
 			applyAnnotation: (color) => void this.applyPopupAnnotation(color),
 			copySelection: () => void this.copySelection(),
 			submitNote: (text) => this.submitNote(text),
+			deleteAnnotation: (id) => this.deleteHighlight(id),
 			translate: (payload, onChunk) => this.translateForPopup(payload, onChunk),
 			insertTranslation: (t) => this.insertPopupTranslation(t),
 			getCached: (key) => this.popupCache.get(key),
@@ -1676,9 +1677,9 @@ export class PaperReaderView extends ItemView {
 		this.hlMenu.hide();
 	}
 
-	private async deleteHighlight(): Promise<void> {
+	private async deleteHighlight(id = this.activeAnnotationId): Promise<void> {
 		if (!this.file) return;
-		const idx = this.data.annotations.findIndex((a) => a.id === this.activeAnnotationId);
+		const idx = this.data.annotations.findIndex((a) => a.id === id);
 		if (idx < 0) return;
 		const backup = this.data.annotations;
 		const removed = backup[idx];
@@ -1688,6 +1689,10 @@ export class PaperReaderView extends ItemView {
 			return;
 		}
 		this.history.push({ kind: "remove", anns: [removed], indexes: [idx] });
+		if (this.editingNoteId === id) {
+			this.editingNoteId = null;
+			this.popup.hide();
+		}
 		this.selectedInkId = null;
 		this.hlMenu.hide();
 	}
