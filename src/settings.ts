@@ -89,8 +89,6 @@ export class PaperReaderSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		new Setting(containerEl).setName("Paper Reader").setHeading();
-
 		new Setting(containerEl).setName("高亮颜色").setHeading();
 		for (const key of COLOR_KEYS) {
 			new Setting(containerEl)
