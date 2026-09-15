@@ -22,8 +22,9 @@ function excerpt(text: string, max = 60): string {
 }
 
 /** small SVG preview of an ink stroke for list/notes */
-export function inkPreviewSvg(ann: Annotation, size = 48): string {
-	if (!ann.ink || ann.ink.points.length < 2) return "";
+export function inkPreviewSvg(ann: Annotation, size = 48): SVGSVGElement | null {
+	if (!ann.ink || !Array.isArray(ann.ink.points) || ann.ink.points.length < 2 || ann.ink.points.length % 2 !== 0 ||
+		!ann.ink.points.every(Number.isFinite) || !Number.isFinite(ann.ink.width) || ann.ink.width <= 0) return null;
 	const b = inkBoundingRect(ann.ink.points);
 	const pad = ann.ink.width + 2;
 	const w = Math.max(b.width + pad * 2, 1);
@@ -32,12 +33,15 @@ export function inkPreviewSvg(ann: Annotation, size = 48): string {
 	for (let i = 2; i + 1 < ann.ink.points.length; i += 2) {
 		d += ` L ${ann.ink.points[i] - b.x + pad} ${ann.ink.points[i + 1] - b.y + pad}`;
 	}
-	return (
-		`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" ` +
-		`viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet">` +
-		`<path d="${d}" fill="none" stroke="#888" stroke-width="${ann.ink.width}" ` +
-		`stroke-linecap="round" stroke-linejoin="round"/></svg>`
-	);
+	const svg = createSvg("svg", { attr: {
+		xmlns: "http://www.w3.org/2000/svg", width: size, height: size,
+		viewBox: `0 0 ${w} ${h}`, preserveAspectRatio: "xMidYMid meet",
+	} });
+	svg.createSvg("path", { attr: {
+		d, fill: "none", stroke: "#888", "stroke-width": ann.ink.width,
+		"stroke-linecap": "round", "stroke-linejoin": "round",
+	} });
+	return svg;
 }
 
 /**
@@ -91,7 +95,8 @@ export class AnnotationList {
 			const firstLine = main.createDiv({ cls: "pr-ann-text" });
 			if (ann.type === "ink") {
 				const preview = main.createDiv({ cls: "pr-ann-ink-preview" });
-				preview.innerHTML = inkPreviewSvg(ann);
+				const svg = inkPreviewSvg(ann);
+				if (svg) preview.appendChild(svg);
 				firstLine.setText("画笔");
 			} else {
 				firstLine.setText(excerpt(ann.text) || "(无文本)");

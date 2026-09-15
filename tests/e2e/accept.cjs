@@ -166,6 +166,19 @@ function check(label, cond, detail = "") {
 	});
 	check("重复导出被跳过且含回链", dup.same && dup.hasLink, JSON.stringify(dup));
 
+	const preview = await page.evaluate(() => {
+		const ann = { ink: { width: 2, points: [10, 20, 30, 40] } };
+		const svg = window.__inkPreview(ann, 120);
+		const malicious = window.__inkPreview({ ink: { width: '2" onload="alert(1)', points: [0, 0] } });
+		return {
+			path: svg.querySelector("path").getAttribute("d"),
+			size: svg.getAttribute("width"),
+			exported: new DOMParser().parseFromString(svg.outerHTML, "image/svg+xml").querySelector("path") !== null,
+			rejected: malicious === null,
+		};
+	});
+	check("画笔预览与 SVG 导出保留路径、尺寸并拒绝无效数据", preview.path === "M 4 4 L 24 24" && preview.size === "120" && preview.exported && preview.rejected, JSON.stringify(preview));
+
 	await browser.close();
 	if (failures > 0) {
 		console.log(`\nACCEPTANCE FAILED (${failures} failures)`);

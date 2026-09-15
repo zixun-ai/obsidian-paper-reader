@@ -159,8 +159,7 @@ export class PdfRenderer {
 		wrapper.style.height = `${Math.floor(viewport.height)}px`;
 		// CSS vars expected by pdf.js v6 text layer styles
 		wrapper.style.setProperty("--total-scale-factor", String(scale));
-		wrapper.style.setProperty("--scale-round-x", "1px");
-		wrapper.style.setProperty("--scale-round-y", "1px");
+		wrapper.setCssProps({ "--scale-round-x": "1px", "--scale-round-y": "1px" });
 
 		const canvas = wrapper.createEl("canvas", { cls: "pr-canvas" });
 		const outputScale = Math.max(window.devicePixelRatio || 1, 1);

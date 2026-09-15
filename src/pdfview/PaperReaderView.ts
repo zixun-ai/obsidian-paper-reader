@@ -1331,7 +1331,7 @@ export class PaperReaderView extends ItemView {
 			case "translation":
 				return { ...base, title: "翻译", quote: ann.text, content: ann.aiContent ?? "" };
 			case "ink": {
-				const svg = inkPreviewSvg(ann, 120);
+				const svg = inkPreviewSvg(ann, 120)?.outerHTML ?? "";
 				const img = `![画笔 p.${ann.page}](data:image/svg+xml;base64,${btoa(
 					unescape(encodeURIComponent(svg))
 				)})`;

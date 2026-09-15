@@ -1,8 +1,21 @@
 // Browser harness bundling the plugin's real modules for Playwright acceptance.
 // Obsidian DOM helper polyfills are installed before any plugin code runs.
 
+function svgElement(tag: string, o?: { attr?: Record<string, string | number> }): SVGElement {
+	const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+	for (const [key, value] of Object.entries(o?.attr ?? {})) el.setAttribute(key, String(value));
+	return el;
+}
 function decorate(): void {
+	Element.prototype.createSvg = function (tag: string, o?: { attr?: Record<string, string | number> }) {
+		return this.appendChild(svgElement(tag, o));
+	} as typeof Element.prototype.createSvg;
+	(globalThis as Record<string, unknown>).createSvg = svgElement;
 	const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
+	proto.setCssStyles = function (styles: Partial<CSSStyleDeclaration>) { Object.assign(this.style, styles); };
+	proto.setCssProps = function (props: Record<string, string>) {
+		for (const [key, value] of Object.entries(props)) this.style.setProperty(key, value);
+	};
 	proto.createDiv = function (o?: { cls?: string }) {
 		const d = document.createElement("div");
 		if (o?.cls) d.className = o.cls;
@@ -86,7 +99,7 @@ import {
 	renderInkStrokes,
 } from "../../src/pdfview/InkLayer";
 import { AnnotationHistory } from "../../src/history/AnnotationHistory";
-import { AnnotationList } from "../../src/pdfview/AnnotationList";
+import { AnnotationList, inkPreviewSvg } from "../../src/pdfview/AnnotationList";
 import { findHits } from "../../src/search/searchText";
 
 class MemAdapter {
@@ -369,3 +382,4 @@ class Harness {
 }
 
 (window as unknown as Record<string, unknown>).__h = new Harness();
+(window as unknown as Record<string, unknown>).__inkPreview = inkPreviewSvg;

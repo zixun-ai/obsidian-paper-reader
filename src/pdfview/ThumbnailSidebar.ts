@@ -155,7 +155,7 @@ export class ThumbnailSidebar {
 		try {
 			const canvas = await this.renderer.renderThumbnail(page, THUMB_WIDTH);
 			if (gen !== this.generation || !item.isConnected) return;
-			item.style.height = "";
+			item.setCssStyles({ height: "" });
 			item.empty();
 			item.appendChild(canvas);
 			const badge = item.createDiv({ cls: "pr-thumb-badge" });

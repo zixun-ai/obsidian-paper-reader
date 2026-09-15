@@ -26,7 +26,7 @@ function load(path: string, imports: Record<string, unknown> = {}): any {
 }
 function element(): any {
 	return {
-		style: {}, value: "", createDiv: element, createEl: element, createSpan: element,
+		style: {}, value: "", createDiv: element, createEl: element, createSpan: element, createSvg: element,
 		addEventListener() {}, setAttr() {}, addClass() {}, removeClass() {},
 		setText(text: string) { this.text = text; }, empty() {}, focus() {},
 		replaceChildren() {}, appendChild() {}, remove() {}, getBoundingClientRect: () => ({ width: 200, height: 100 }),

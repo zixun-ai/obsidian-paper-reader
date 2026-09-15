@@ -47,20 +47,18 @@ function styleRect(
 		el.addClass("pr-line-rect");
 	} else if (style === "wavy") {
 		el.style.backgroundImage = wavyBackground(colorHex, scale);
-		el.style.backgroundRepeat = "repeat-x";
-		el.style.backgroundPosition = "bottom left";
+		el.setCssStyles({ backgroundRepeat: "repeat-x", backgroundPosition: "bottom left" });
 		el.addClass("pr-line-rect");
 	} else if (style === "strikethrough") {
 		// solid line at the vertical middle of each line rect
 		const thickness = Math.max(1.5, 2 * scale);
 		el.style.backgroundImage = `linear-gradient(${colorHex}, ${colorHex})`;
-		el.style.backgroundRepeat = "no-repeat";
+		el.setCssStyles({ backgroundRepeat: "no-repeat", backgroundPosition: "0 50%" });
 		el.style.backgroundSize = `100% ${thickness}px`;
-		el.style.backgroundPosition = "0 50%";
 		el.addClass("pr-line-rect");
 	} else {
 		el.style.backgroundColor = hexToRgba(colorHex, 1);
-		el.style.mixBlendMode = "multiply";
+		el.setCssStyles({ mixBlendMode: "multiply" });
 	}
 }
 

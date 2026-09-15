@@ -89,9 +89,9 @@ export class PaperReaderSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h2", { text: "Paper Reader" });
+		new Setting(containerEl).setName("Paper Reader").setHeading();
 
-		containerEl.createEl("h3", { text: "高亮颜色" });
+		new Setting(containerEl).setName("高亮颜色").setHeading();
 		for (const key of COLOR_KEYS) {
 			new Setting(containerEl)
 				.setName(COLOR_LABELS[key])
@@ -106,7 +106,7 @@ export class PaperReaderSettingTab extends PluginSettingTab {
 				);
 		}
 
-		containerEl.createEl("h3", { text: "标注存储" });
+		new Setting(containerEl).setName("标注存储").setHeading();
 		new Setting(containerEl)
 			.setName("标注文件后缀")
 			.setDesc("每篇 PDF 的标注保存在同名文件中，例如 paper.pdf -> paper.annotations.json")
@@ -134,7 +134,7 @@ export class PaperReaderSettingTab extends PluginSettingTab {
 					})
 			);
 
-		containerEl.createEl("h3", { text: "交互" });
+		new Setting(containerEl).setName("交互").setHeading();
 		new Setting(containerEl)
 			.setName("默认 PDF 阅读器")
 			.setDesc("接管 .pdf 文件：点击库内任意 PDF 直接用 Paper Reader 打开（更改后需重载插件生效）")
@@ -158,7 +158,7 @@ export class PaperReaderSettingTab extends PluginSettingTab {
 					})
 			);
 
-		containerEl.createEl("h3", { text: "LLM" });
+		new Setting(containerEl).setName("LLM").setHeading();
 		new Setting(containerEl)
 			.setName("Base URL")
 			.setDesc(

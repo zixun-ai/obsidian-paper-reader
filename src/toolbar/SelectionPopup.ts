@@ -23,11 +23,6 @@ export interface SelectionPopupDeps {
 	setCached: (key: string, state: PopupCachedState) => void;
 }
 
-const WAVY_ICON =
-	`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" ` +
-	`stroke="currentColor" stroke-width="2" stroke-linecap="round">` +
-	`<path d="M2 14 Q 5 8 8 14 T 14 14 T 20 14 T 26 14"/></svg>`;
-
 const STYLE_ORDER: { key: AnnotationStyle; icon: string | null; label: string }[] = [
 	{ key: "highlight", icon: "highlighter", label: "实心高亮" },
 	{ key: "underline", icon: "underline", label: "直线" },
@@ -133,7 +128,13 @@ export class SelectionPopup {
 			const btn = stylesRow.createEl("button", { cls: "pr-popup-style-btn" });
 			btn.setAttr("aria-label", label);
 			if (icon) setIcon(btn, icon);
-			else btn.innerHTML = WAVY_ICON;
+			else {
+				const svg = btn.createSvg("svg", { attr: {
+					viewBox: "0 0 24 24", fill: "none", stroke: "currentColor",
+					"stroke-width": "2", "stroke-linecap": "round",
+				} });
+				svg.createSvg("path", { attr: { d: "M2 14 Q 5 8 8 14 T 14 14 T 20 14 T 26 14" } });
+			}
 			if (key === currentStyle) btn.addClass("pr-popup-style-active");
 			btn.addEventListener("click", (e) => {
 				e.stopPropagation();
