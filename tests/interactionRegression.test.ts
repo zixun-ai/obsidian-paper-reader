@@ -9,7 +9,7 @@ const ts = createRequire(process.cwd() + "/package.json")("typescript");
 const notices: string[] = [];
 const obsidian = {
 	Notice: class { constructor(message: string) { notices.push(message); } },
-	ItemView: class {}, setIcon() {},
+	ItemView: class {}, Component: class {}, setIcon() {},
 	MarkdownRenderer: { render: async () => {} },
 };
 function load(path: string, imports: Record<string, unknown> = {}): any {
@@ -19,7 +19,7 @@ function load(path: string, imports: Record<string, unknown> = {}): any {
 	}).outputText;
 	runInNewContext(source, {
 		exports, require: (name: string) => imports[name] ?? obsidian,
-		document: { body: element() }, window: { innerWidth: 1000, innerHeight: 1000 },
+		document: { body: element(), createElement: element }, window: { innerWidth: 1000, innerHeight: 1000 },
 		DOMRect: class {}, crypto,
 	});
 	return exports;
@@ -29,7 +29,7 @@ function element(): any {
 		style: {}, value: "", createDiv: element, createEl: element, createSpan: element,
 		addEventListener() {}, setAttr() {}, addClass() {}, removeClass() {},
 		setText(text: string) { this.text = text; }, empty() {}, focus() {},
-		appendChild() {}, remove() {}, getBoundingClientRect: () => ({ width: 200, height: 100 }),
+		replaceChildren() {}, appendChild() {}, remove() {}, getBoundingClientRect: () => ({ width: 200, height: 100 }),
 	};
 }
 function deferred() {
@@ -70,6 +70,7 @@ test("real panel: switching selection or closing invalidates the pending answer"
 	const recorded: unknown[] = [];
 	const panel = Object.create(AnswerPanel.prototype);
 	Object.assign(panel, {
+		component: { addChild: (c: any) => c, removeChild() {} },
 		generation: 0, streaming: false, history: [], bodyEl: element(), titleEl: element(), el: element(),
 		mode: "translate", payload: A, getSourcePath: () => "",
 		callbacks: { onAnswered: (...args: unknown[]) => recorded.push(args) },
@@ -140,4 +141,28 @@ test("note deletion preserves draft on save failure and records undo after succe
  assert.equal(hidden, true); assert.equal(view.editingNoteId, null);
  assert.equal(history[0].kind, "remove");
  assert.equal(history[0].anns[0], note); assert.equal(history[0].indexes[0], 0);
+});
+
+test("answer renders Markdown before stream completion and flushes the last chunk", async () => {
+ const rendered: string[] = [];
+ const { AnswerPanel } = load("src/panel/AnswerPanel.ts", {
+  obsidian: { ...obsidian, MarkdownRenderer: { render: async (_a: unknown, text: string) => { rendered.push(text); } } },
+ });
+ const gate = deferred();
+ let recorded = "";
+ const panel = Object.create(AnswerPanel.prototype);
+ Object.assign(panel, {
+  generation: 0, streaming: false, payload: A, mode: "explain", bodyEl: element(),
+  component: { addChild: (c: any) => c, removeChild() {} }, getSourcePath: () => "paper.pdf",
+  llm: { async *streamChat() { yield "**重点**"; await gate.promise; yield "\n- 内容"; } },
+  callbacks: { onAnswered: (_m: unknown, _p: unknown, text: string) => { recorded = text; } },
+ });
+ const pending = panel.run([]);
+ for (let i = 0; i < 10; i++) await Promise.resolve();
+ assert.equal(rendered[0], "**重点**");
+ assert.equal(panel.streaming, true); assert.equal(recorded, "");
+ gate.resolve(""); await pending;
+ assert.equal(rendered.at(-1), "**重点**\n- 内容");
+ assert.equal(recorded, "**重点**\n- 内容");
+ assert.equal(panel.streaming, false);
 });

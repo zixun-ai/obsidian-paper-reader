@@ -166,12 +166,33 @@ export class AnswerPanel {
 		this.history = messages;
 		const live = this.bodyEl.createDiv({ cls: "pr-msg pr-msg-assistant pr-streaming" });
 		let answer = "";
+		let renderedAnswer = "";
+		let lastRenderAt = 0;
+		let renderedComponent: Component | null = null;
+		const sourcePath = this.getSourcePath();
+		const render = async () => {
+			const snapshot = answer;
+			const target = document.createElement("div");
+			const renderComponent = this.component.addChild(new Component());
+			try {
+				await MarkdownRenderer.render(this.app, snapshot, target, sourcePath, renderComponent);
+			} catch { target.setText(snapshot); }
+			if (generation !== this.generation) {
+				this.component.removeChild(renderComponent);
+				return;
+			}
+			if (renderedComponent) this.component.removeChild(renderedComponent);
+			renderedComponent = renderComponent;
+			live.replaceChildren(target);
+			renderedAnswer = snapshot;
+			lastRenderAt = Date.now();
+			this.scrollToBottom();
+		};
 		try {
 			for await (const chunk of this.llm.streamChat(messages)) {
 				if (generation !== this.generation) return;
 				answer += chunk;
-				live.setText(answer);
-				this.scrollToBottom();
+				if (!renderedAnswer || Date.now() - lastRenderAt >= 100) await render();
 			}
 		} catch (e) {
 			if (generation !== this.generation) return;
@@ -184,23 +205,13 @@ export class AnswerPanel {
 			return;
 		}
 		if (generation !== this.generation) return;
+		if (renderedAnswer !== answer) await render();
+		if (generation !== this.generation) return;
 		this.streaming = false;
 		this.history = [...messages, { role: "assistant", content: answer }];
 		this.lastAnswer = answer;
 		live.removeClass("pr-streaming");
-		live.empty();
-		try {
-			await MarkdownRenderer.render(
-				this.app,
-				answer,
-				live,
-				this.getSourcePath(),
-				this.component
-			);
-		} catch {
-			live.setText(answer); // fall back to plain text
-		}
-		this.scrollToBottom();
+
 		if (generation === this.generation && payload) {
 			this.callbacks.onAnswered(mode, payload, answer);
 		}
