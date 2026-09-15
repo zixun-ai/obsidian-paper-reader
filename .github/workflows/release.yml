@@ -1,0 +1,24 @@
+name: Release
+on:
+  push:
+    tags: ['[0-9]*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run check
+      - name: Validate version
+        run: node -e 'const fs=require("fs"),m=require("./manifest.json"),p=require("./package.json"),v=require("./versions.json");if(process.env.GITHUB_REF_NAME!==m.version||p.version!==m.version||v[m.version]!==m.minAppVersion)throw Error("Version mismatch");for(const f of ["main.js","manifest.json","styles.css"])if(!fs.statSync(f).size)throw Error(f);'
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --generate-notes main.js manifest.json styles.css

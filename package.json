@@ -1,0 +1,38 @@
+{
+  "name": "obsidian-paper-reader",
+  "version": "0.1.0",
+  "description": "PDF paper reader with highlights and annotations for Obsidian.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "test": "esbuild tests/*.test.ts --bundle --platform=node --format=cjs --alias:obsidian=./tests/obsidian-stub.ts --outdir=.test-dist --log-level=warning && node --test \".test-dist/*.test.js\"",
+    "test:e2e": "node scripts/test-e2e.mjs",
+    "check": "npm test && npm run build && npm run test:e2e"
+  },
+  "keywords": [
+    "obsidian",
+    "pdf",
+    "paper",
+    "highlight"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^16.11.6",
+    "@typescript-eslint/eslint-plugin": "5.29.0",
+    "@typescript-eslint/parser": "5.29.0",
+    "builtin-modules": "3.3.0",
+    "esbuild": "^0.24.2",
+    "obsidian": "latest",
+    "playwright": "^1.63.0",
+    "tslib": "2.4.0",
+    "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^6.3.289"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zixun-ai/obsidian-paper-reader.git"
+  }
+}
