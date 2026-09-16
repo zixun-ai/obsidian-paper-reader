@@ -7,6 +7,8 @@ export type HighlightClickHandler = (
 	clientY: number
 ) => void;
 
+const pageClickHandlers = new WeakMap<HTMLElement, EventListener>();
+
 function hexToRgba(hex: string, alpha: number): string {
 	const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
 	if (!m) return hex;
@@ -71,6 +73,33 @@ export function renderHighlightRects(
 	onClick: HighlightClickHandler
 ): void {
 	layerEl.empty();
+	const pageEl = layerEl.parentElement;
+	const previousClickHandler = pageEl && pageClickHandlers.get(pageEl);
+	if (pageEl && previousClickHandler) {
+		pageEl.removeEventListener("click", previousClickHandler);
+	}
+	if (pageEl) {
+		const clickHandler = (event: Event): void => {
+			const e = event as MouseEvent;
+			const selection = pageEl.ownerDocument.getSelection();
+			if (selection && !selection.isCollapsed && selection.toString().trim()) return;
+			const pageRect = pageEl.getBoundingClientRect();
+			const x = (e.clientX - pageRect.left) / scale;
+			const y = (e.clientY - pageRect.top) / scale;
+			const annotation = [...annotations].reverse().find((ann) =>
+				ann.rects.some(
+					(rect) =>
+						x >= rect.x &&
+						x <= rect.x + rect.width &&
+						y >= rect.y &&
+						y <= rect.y + rect.height
+				)
+			);
+			if (annotation) onClick(annotation, e.clientX, e.clientY);
+		};
+		pageEl.addEventListener("click", clickHandler);
+		pageClickHandlers.set(pageEl, clickHandler);
+	}
 	for (const ann of annotations) {
 		const color = colors[ann.color] ?? ann.color;
 		for (const rect of ann.rects) {
@@ -81,10 +110,6 @@ export function renderHighlightRects(
 			el.style.width = `${rect.width * scale}px`;
 			el.style.height = `${rect.height * scale}px`;
 			styleRect(el, ann, color, scale);
-			el.addEventListener("click", (e) => {
-				e.stopPropagation();
-				onClick(ann, e.clientX, e.clientY);
-			});
 		}
 		// note marker icon at the end of the last rect
 		if (ann.type === "note" && ann.rects.length > 0) {

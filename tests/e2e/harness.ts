@@ -129,6 +129,7 @@ class Harness {
 	data: AnnotationFile = { version: 1, file: "paper.pdf", annotations: [] };
 	highlightLayer: HTMLElement | null = null;
 	pageEl: HTMLElement | null = null;
+	private clickedHighlightId: string | null = null;
 
 	async loadPdf(): Promise<number> {
 		const res = await fetch("/paper.pdf");
@@ -178,8 +179,15 @@ class Harness {
 		else selection.setBaseAndExtent(first, 0, last, last.textContent!.length);
 		const payload = selectionToPayload(selection, scale, p => this.renderer.getPageText(p))!;
 		const annotation = annotationFromPayload(payload, { type: "highlight", color: "red", style: "underline" });
-		renderHighlightRects(page.highlightLayer, [annotation], scale, { red: "#F26D6D" }, () => {});
+		this.clickedHighlightId = null;
+		renderHighlightRects(page.highlightLayer, [annotation], scale, { red: "#F26D6D" }, (ann) => {
+			this.clickedHighlightId = ann.id;
+		});
 		return page.highlightLayer.querySelectorAll(".pr-line-rect").length;
+	}
+
+	lastHighlightClick(): string | null {
+		return this.clickedHighlightId;
 	}
 
 	private redraw(): void {
