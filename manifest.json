@@ -1,7 +1,7 @@
 {
   "id": "paper-reader",
   "name": "Paper Reader",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "minAppVersion": "1.13.7",
   "description": "Read and annotate PDF papers with ink, search, linked notes, and optional AI translation and explanations.",
   "author": "zixun",

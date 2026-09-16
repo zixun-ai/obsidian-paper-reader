@@ -228,8 +228,7 @@
 
 .pr-highlight-rect {
 	position: absolute;
-	pointer-events: auto;
-	cursor: pointer;
+	pointer-events: none;
 	mix-blend-mode: multiply;
 	border-radius: 1px;
 }

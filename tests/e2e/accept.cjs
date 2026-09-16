@@ -111,6 +111,27 @@ function check(label, cond, detail = "") {
 		}
 	}
 
+	// Existing annotations must not intercept a new native text selection.
+	await page.evaluate(() => window.__h.underlineTitle(1.5, false));
+	const titleSpan = page.locator(".textLayer span").filter({ hasText: "LandslideAgent" }).first();
+	const titleBox = await titleSpan.boundingBox();
+	await page.evaluate(() => window.getSelection()?.removeAllRanges());
+	await page.mouse.move(titleBox.x + 10, titleBox.y + titleBox.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(titleBox.x + titleBox.width / 2, titleBox.y + titleBox.height / 2, { steps: 8 });
+	await page.mouse.up();
+	const reselected = await page.evaluate(({ x, y }) => ({
+		text: window.getSelection()?.toString() ?? "",
+		hit: document.elementFromPoint(x, y)?.className ?? "",
+		pointer: getComputedStyle(document.querySelector(".pr-highlight-rect")).pointerEvents,
+	}), { x: titleBox.x + 10, y: titleBox.y + titleBox.height / 2 });
+	check("已有下划线上仍可用鼠标重新选文", reselected.text.length > 0, JSON.stringify(reselected));
+	await page.evaluate(() => window.getSelection()?.removeAllRanges());
+	const underlineBox = await page.locator(".pr-highlight-rect").first().boundingBox();
+	await page.mouse.click(underlineBox.x + underlineBox.width / 2, underlineBox.y + underlineBox.height / 2);
+	const clickedHighlight = await page.evaluate(() => window.__h.lastHighlightClick());
+	check("单击已有下划线仍能命中标注", !!clickedHighlight);
+
 	// 6) pen stroke: draw -> persisted -> reload restores -> undo/redo
 	const stroke = await page.evaluate(() => window.__h.drawStroke());
 	check("画笔一笔生成一条笔迹路径", stroke.paths === 1, JSON.stringify(stroke));

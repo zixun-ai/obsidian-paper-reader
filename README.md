@@ -17,7 +17,7 @@ Read PDF papers, annotate passages, draw ink, and export linked Markdown notes i
 
 Desktop only. Minimum Obsidian version: **1.13.7**. macOS is verified; Windows and Linux still need platform testing. Mobile support is not claimed.
 
-Until this plugin is listed in the Community directory, download `main.js`, `manifest.json`, and `styles.css` from [Releases](https://github.com/zixun-ai/obsidian-paper-reader/releases). Put them in `<vault>/<config-dir>/plugins/paper-reader/` (the default config directory is `.obsidian`), then reload and enable **Paper Reader**. The PDF worker is embedded; no fourth file or runtime download is needed.
+Install **Paper Reader** from **Settings → Community plugins → Browse**, or use [Add to Obsidian](obsidian://show-plugin?id=paper-reader). For manual installation, download `main.js`, `manifest.json`, and `styles.css` from [Releases](https://github.com/zixun-ai/obsidian-paper-reader/releases), put them in `<vault>/<config-dir>/plugins/paper-reader/` (the default config directory is `.obsidian`), then reload and enable the plugin. The PDF worker is embedded; no fourth file or runtime download is needed.
 
 ## Use
 
@@ -68,7 +68,7 @@ Report bugs using [GitHub Issues](https://github.com/zixun-ai/obsidian-paper-rea
 
 在 Obsidian 中阅读 PDF 论文，支持文字标注、批注、鼠标画笔、撤销重做、全文搜索、阅读位置恢复和带来源回跳的 Markdown 笔记导出。AI 翻译、解释和问答为可选功能，使用你自己的兼容接口和 API Key。
 
-首版仅支持桌面，要求 Obsidian 1.13.7 或更新版本；已验证 macOS，Windows/Linux 尚待实测。默认不接管内置 PDF 阅读器，可右键 PDF 选择 **Open in Paper Reader**。安装只需 Release 中的 `main.js`、`manifest.json` 和 `styles.css`。
+首版仅支持桌面，要求 Obsidian 1.13.7 或更新版本；已验证 macOS，Windows/Linux 尚待实测。可在 **设置 → 第三方插件 → 浏览** 中搜索 **Paper Reader** 安装。默认不接管内置 PDF 阅读器，可右键 PDF 选择 **Open in Paper Reader**。
 
 标注单独保存在 PDF 旁的 `*.annotations.json`，不写入原 PDF；笔记导出到 `*.notes.md`。请一起备份。AI 操作会发送选中文字、配置的上下文和问答历史到你指定的接口，费用和数据处理由服务商决定。API Key 明文保存在插件 `data.json` 中，切勿公开上传。离线阅读无需 API，也没有遥测或广告。
 
