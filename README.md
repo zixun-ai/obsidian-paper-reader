@@ -11,7 +11,7 @@ Read PDF papers, annotate passages, draw ink, and export linked Markdown notes i
 - Session undo/redo, annotation sidebar, thumbnails, and document outline.
 - Full-text search, saved reading position, zoom, continuous, single-page, and two-page layouts.
 - Append-only Markdown export with links back to the PDF page and duplicate-export detection.
-- Optional streaming AI assistance using your own API key.
+- Optional AI assistance using your own API key.
 
 ## Install
 
