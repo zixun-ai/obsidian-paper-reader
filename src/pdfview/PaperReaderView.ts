@@ -3,7 +3,7 @@ import type { ViewStateResult } from "obsidian";
 import type PaperReaderPlugin from "../main";
 import { PdfRenderer, RenderedPage } from "./PdfRenderer";
 import { SelectionPayload, rectsOverlap, sameSelection, selectionToPayload } from "./selection";
-import { PopupCachedState, PopupStateCache } from "./popupCache";
+import { PopupStateCache } from "./popupCache";
 import {
 	LiveStroke,
 	beginInkRectangle,
@@ -128,7 +128,7 @@ export class PaperReaderView extends ItemView {
 		// plugin.app is guaranteed set; this.app on the view may not be
 		// injected yet when the constructor runs during workspace restore
 		this.store = new AnnotationStore(plugin.app, () => this.plugin.settings.annotationSuffix);
-		this.llm = new LlmClient(() => ({
+		this.llm = new LlmClient(plugin.app, () => ({
 			baseUrl: this.plugin.settings.llmBaseUrl,
 			apiKey: this.plugin.settings.llmApiKey,
 			model: this.plugin.settings.llmModel,
@@ -265,7 +265,7 @@ export class PaperReaderView extends ItemView {
 			}
 			// undo/redo: only when this view is active and not typing
 			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && !e.altKey) {
-				if (this.app.workspace.activeLeaf === this.leaf && !this.isEditableTarget(e.target)) {
+				if (this.app.workspace.getActiveViewOfType(PaperReaderView) === this && !this.isEditableTarget(e.target)) {
 					e.preventDefault();
 					if (e.shiftKey) void this.history.redo();
 					else void this.history.undo();
@@ -274,7 +274,7 @@ export class PaperReaderView extends ItemView {
 			}
 			// in-document search
 			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f" && !e.altKey) {
-				if (this.app.workspace.activeLeaf === this.leaf) {
+				if (this.app.workspace.getActiveViewOfType(PaperReaderView) === this) {
 					e.preventDefault();
 					this.openSearch();
 				}
@@ -1100,7 +1100,7 @@ export class PaperReaderView extends ItemView {
 		if (e.ctrlKey || e.metaKey || e.altKey) return;
 		if (this.isEditableTarget(e.target)) return;
 		// only when this view's leaf is active
-		if (this.app.workspace.activeLeaf !== this.leaf) return;
+		if (this.app.workspace.getActiveViewOfType(PaperReaderView) !== this) return;
 		if (e.key === "ArrowLeft" || e.key === "PageUp") {
 			e.preventDefault();
 			void this.scrollToPage(this.currentPage - 1);
@@ -1454,9 +1454,10 @@ export class PaperReaderView extends ItemView {
 				return { ...base, title: "翻译", quote: ann.text, content: ann.aiContent ?? "" };
 			case "ink": {
 				const svg = inkPreviewSvg(ann, 120)?.outerHTML ?? "";
-				const img = `![画笔 p.${ann.page}](data:image/svg+xml;base64,${btoa(
-					unescape(encodeURIComponent(svg))
-				)})`;
+				const bytes = new TextEncoder().encode(svg);
+				let binary = "";
+				for (const byte of bytes) binary += String.fromCharCode(byte);
+				const img = `![画笔 p.${ann.page}](data:image/svg+xml;base64,${btoa(binary)})`;
 				return { ...base, title: "画笔", quote: "", content: img };
 			}
 			default:

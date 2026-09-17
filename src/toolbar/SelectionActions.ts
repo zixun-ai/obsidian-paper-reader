@@ -115,7 +115,7 @@ export class SelectionActions {
 			menu.addItem((item) => {
 				// color dot inside the title; setChecked shows a ✓ on the left
 				const frag = document.createDocumentFragment();
-				const dot = document.createElement("span");
+				const dot = createSpan();
 				dot.className = "pr-menu-dot";
 				dot.style.backgroundColor = colors[key] ?? key;
 				frag.appendChild(dot);

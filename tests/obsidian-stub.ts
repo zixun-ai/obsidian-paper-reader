@@ -12,6 +12,30 @@ export function normalizePath(p: string): string {
 	return p.replace(/\\/g, "/").replace(/\/+/g, "/");
 }
 export class App {}
+export class ConfirmationModal {
+	private title = "";
+	private content = "";
+	private approve: (() => unknown) | null = null;
+	onClose(): void {}
+	constructor(_app: App) {}
+	setTitle(value: string): this { this.title = value; return this; }
+	setContent(value: string): this { this.content = value; return this; }
+	addButton(cb: (button: any) => void): this {
+		const button = {
+			setButtonText: () => button,
+			setCta: () => button,
+			setInitialFocus: () => button,
+			onClick: (handler: () => unknown) => { this.approve = handler; return button; },
+		};
+		cb(button);
+		return this;
+	}
+	addCancelButton(): this { return this; }
+	open(): void {
+		if (window.confirm(`${this.title}\n${this.content}`)) void this.approve?.();
+		else this.onClose();
+	}
+}
 export class TFile {}
 export class PluginSettingTab {
 	containerEl = {} as HTMLElement;
@@ -19,6 +43,15 @@ export class PluginSettingTab {
 }
 export class Setting {}
 export function setIcon(): void {}
-export async function requestUrl(): Promise<never> {
-	throw new Error("requestUrl not available in tests");
+export async function requestUrl(options: { url: string; method?: string; headers?: Record<string, string>; body?: string }): Promise<any> {
+	const response = await fetch(options.url, {
+		method: options.method,
+		headers: options.headers,
+		body: options.body,
+		redirect: "error",
+	});
+	const text = await response.text();
+	let json: unknown = null;
+	try { json = JSON.parse(text); } catch {}
+	return { status: response.status, text, json };
 }

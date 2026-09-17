@@ -172,7 +172,7 @@ export class AnswerPanel {
 		const sourcePath = this.getSourcePath();
 		const render = async () => {
 			const snapshot = answer;
-			const target = document.createElement("div");
+			const target = createDiv();
 			const renderComponent = this.component.addChild(new Component());
 			try {
 				await MarkdownRenderer.render(this.app, snapshot, target, sourcePath, renderComponent);

@@ -1,4 +1,4 @@
-import { requestUrl } from "obsidian";
+import { App, ConfirmationModal, requestUrl } from "obsidian";
 
 export interface LlmConfig {
 	baseUrl: string;
@@ -20,8 +20,6 @@ export class LlmError extends Error {
 		this.name = "LlmError";
 	}
 }
-
-const REQUEST_TIMEOUT_MS = 120_000;
 
 function chatCompletionsUrl(baseUrl: string): string {
 	let url: URL;
@@ -53,22 +51,41 @@ async function httpError(status: number, body: string): Promise<LlmError> {
 
 /**
  * OpenAI-compatible chat completions client.
- * Primary path: fetch with SSE streaming. Fallback (CORS etc.):
- * Obsidian requestUrl with a non-streaming request, delivered as one chunk.
+ * Uses Obsidian's requestUrl so requests follow the host's network policy.
+ * The non-streaming response is delivered as one chunk.
  */
 export class LlmClient {
 	private approvedEndpoint = "";
-	constructor(private getConfig: () => LlmConfig) {}
+	constructor(private app: App, private getConfig: () => LlmConfig) {}
 
-	private confirmSending(config: LlmConfig): void {
+	private async confirmSending(config: LlmConfig): Promise<void> {
 		const endpoint = chatCompletionsUrl(config.baseUrl);
 		if (this.approvedEndpoint === endpoint) return;
-		if (!window.confirm(
-			`允许向以下 AI 接口发送数据吗？\n${endpoint}\n\n` +
-			"AI 操作会发送选中文字、所选上下文（可能含页面或更多论文内容）、问题和对话历史，以及 API Key。连接测试仅发送测试文字和密钥。\n" +
-			"数据直接交给该接口服务商，不经过 Paper Reader 开发者服务器；服务商的数据政策和费用适用。请勿发送无权分享的敏感内容。\n\n" +
-			"密钥明文保存在插件 data.json，同步或分享配置可能带出密钥。允许后，本阅读窗口内同一接口不再提示。"
-		)) throw new LlmError("config", "已取消 AI 数据发送");
+		const modal = new ConfirmationModal(this.app)
+			.setTitle("允许发送 AI 数据？")
+			.setContent(
+				`接收方：${endpoint}\n\n` +
+				"AI 操作会发送选中文字、所选上下文（可能含页面或更多论文内容）、问题和对话历史，以及 API Key。连接测试仅发送测试文字和密钥。\n\n" +
+				"数据直接交给该接口服务商，不经过 Paper Reader 开发者服务器；服务商的数据政策和费用适用。请勿发送无权分享的敏感内容。\n\n" +
+				"密钥明文保存在插件 data.json，同步或分享配置可能带出密钥。允许后，本阅读窗口内同一接口不再提示。"
+			);
+		const approved = await new Promise<boolean>((resolve) => {
+			let settled = false;
+			const finish = (value: boolean) => {
+				if (settled) return;
+				settled = true;
+				resolve(value);
+			};
+			modal.addButton((button) => button
+				.setButtonText("允许")
+				.setCta()
+				.setInitialFocus()
+				.onClick(() => finish(true)));
+			modal.addCancelButton("取消");
+			modal.onClose = () => finish(false);
+			modal.open();
+		});
+		if (!approved) throw new LlmError("config", "已取消 AI 数据发送");
 		this.approvedEndpoint = endpoint;
 	}
 
@@ -86,76 +103,8 @@ export class LlmClient {
 
 	async *streamChat(messages: ChatMessage[]): AsyncGenerator<string> {
 		const config = this.ensureConfig();
-		this.confirmSending(config);
-		let yielded = false;
-		try {
-			for await (const chunk of this.streamViaFetch(config, messages)) {
-				yielded = true;
-				yield chunk;
-			}
-			return;
-		} catch (e) {
-			// only fall back when nothing was streamed yet
-			if (yielded || !(e instanceof TypeError)) throw e;
-		}
+		await this.confirmSending(config);
 		yield await this.viaRequestUrl(config, messages);
-	}
-
-	private async *streamViaFetch(
-		config: LlmConfig,
-		messages: ChatMessage[]
-	): AsyncGenerator<string> {
-		const ctrl = new AbortController();
-		const timer = window.setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
-		try {
-			const resp = await fetch(chatCompletionsUrl(config.baseUrl), {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					Authorization: `Bearer ${config.apiKey}`,
-				},
-				body: JSON.stringify({ model: config.model, messages, stream: true }),
-				signal: ctrl.signal,
-				redirect: "error",
-			});
-			if (!resp.ok) {
-				throw await httpError(resp.status, await resp.text());
-			}
-			if (!resp.body) {
-				throw new LlmError("network", "响应不可读（无响应体）");
-			}
-			const reader = resp.body.getReader();
-			const decoder = new TextDecoder();
-			let buffer = "";
-			for (;;) {
-				const { done, value } = await reader.read();
-				if (done) break;
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split("\n");
-				buffer = lines.pop() ?? "";
-				for (const line of lines) {
-					const trimmed = line.trim();
-					if (!trimmed.startsWith("data:")) continue;
-					const data = trimmed.slice(5).trim();
-					if (data === "[DONE]") return;
-					try {
-						const json = JSON.parse(data);
-						const delta = json.choices?.[0]?.delta?.content;
-						if (typeof delta === "string" && delta) yield delta;
-					} catch {
-						// skip malformed SSE chunks
-					}
-				}
-			}
-		} catch (e) {
-			if (e instanceof LlmError) throw e;
-			if (e instanceof DOMException && e.name === "AbortError") {
-				throw new LlmError("timeout", "请求超时（120 秒），请检查网络或更换模型");
-			}
-			throw e; // TypeError (CORS / network) handled by caller fallback
-		} finally {
-			window.clearTimeout(timer);
-		}
 	}
 
 	private async viaRequestUrl(
@@ -175,7 +124,8 @@ export class LlmClient {
 		if (resp.status < 200 || resp.status >= 300) {
 			throw await httpError(resp.status, resp.text);
 		}
-		const content = resp.json?.choices?.[0]?.message?.content;
+		const json = resp.json as { choices?: Array<{ message?: { content?: unknown } }> } | null;
+		const content = json?.choices?.[0]?.message?.content;
 		if (typeof content !== "string") {
 			throw new LlmError("parse", "响应格式无法解析");
 		}
@@ -187,7 +137,7 @@ export class LlmClient {
 		let config: LlmConfig;
 		try {
 			config = this.ensureConfig();
-			this.confirmSending(config);
+			await this.confirmSending(config);
 		} catch (e) {
 			return { ok: false, error: (e as Error).message };
 		}

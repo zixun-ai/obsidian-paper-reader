@@ -20,6 +20,7 @@ function load(path: string, imports: Record<string, unknown> = {}): any {
 	runInNewContext(source, {
 		exports, require: (name: string) => imports[name] ?? obsidian,
 		document: { body: element(), createElement: element }, window: { innerWidth: 1000, innerHeight: 1000 },
+		createDiv: element, createEl: element, createSpan: element, createSvg: element,
 		DOMRect: class {}, crypto,
 	});
 	return exports;

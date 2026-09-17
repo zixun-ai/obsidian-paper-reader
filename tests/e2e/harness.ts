@@ -241,18 +241,13 @@ class Harness {
 	}
 
 	async translate(payload: SelectionPayload): Promise<string> {
-		// mock LLM via SSE fetch interception
-		const sse = [
-			'data: {"choices":[{"delta":{"content":"滑坡"}}]}',
-			'data: {"choices":[{"delta":{"content":"智能体"}}]}',
-			"data: [DONE]",
-		].join("\n\n");
+		// mock the non-streaming Obsidian requestUrl transport
 		window.fetch = async () =>
-			new Response(sse, {
+			new Response(JSON.stringify({ choices: [{ message: { content: "滑坡智能体" } }] }), {
 				status: 200,
-				headers: { "Content-Type": "text/event-stream" },
+				headers: { "Content-Type": "application/json" },
 			});
-		const client = new LlmClient(() => ({
+		const client = new LlmClient(this.app as never, () => ({
 			baseUrl: "https://mock.local/v1/",
 			apiKey: "sk-test",
 			model: "mock-model",

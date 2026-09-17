@@ -816,8 +816,8 @@
 }
 
 /* pen tool */
-.pr-pen-on {
-	color: var(--interactive-accent) !important;
+.pr-header-btn.pr-pen-on {
+	color: var(--interactive-accent);
 	background: var(--background-modifier-hover);
 }
 
@@ -1024,7 +1024,7 @@
 	animation: pr-flash-outline 1.2s ease-out;
 }
 
-path.pr-flash {
+svg path.pr-flash {
 	animation: none;
-	stroke: var(--interactive-accent) !important;
+	stroke: var(--interactive-accent);
 }

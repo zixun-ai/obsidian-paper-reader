@@ -6,6 +6,20 @@ import type {
 } from "pdfjs-dist/legacy/build/pdf.mjs";
 import type { OutlineNode } from "../outline/OutlineTree";
 
+type PdfOutlineItem = {
+	title: string;
+	dest: string | unknown[] | null;
+	items: PdfOutlineItem[];
+};
+
+type PdfRef = { num: number; gen: number };
+
+function isRefProxy(value: unknown): value is PdfRef {
+	return typeof value === "object" && value !== null &&
+		typeof (value as PdfRef).num === "number" &&
+		typeof (value as PdfRef).gen === "number";
+}
+
 export interface RenderedPage {
 	pageNumber: number;
 	/** wrapper element (.pr-page), position: relative */
@@ -90,12 +104,10 @@ export class PdfRenderer {
 	async getOutline(): Promise<OutlineNode[] | null> {
 		if (!this.doc) return null;
 		const doc = this.doc;
-		const raw = await doc.getOutline();
+		const raw = await doc.getOutline() as PdfOutlineItem[] | null;
 		if (!raw || raw.length === 0) return null;
 
-		const resolve = async (
-			items: typeof raw
-		): Promise<OutlineNode[]> => {
+		const resolve = async (items: PdfOutlineItem[]): Promise<OutlineNode[]> => {
 			const out: OutlineNode[] = [];
 			for (const item of items) {
 				let page: number | null = null;
@@ -104,7 +116,7 @@ export class PdfRenderer {
 						typeof item.dest === "string"
 							? await doc.getDestination(item.dest)
 							: item.dest;
-					if (Array.isArray(dest) && dest[0]) {
+					if (Array.isArray(dest) && isRefProxy(dest[0])) {
 						page = (await doc.getPageIndex(dest[0])) + 1;
 					}
 				} catch {
@@ -130,7 +142,7 @@ export class PdfRenderer {
 		const base = page.getViewport({ scale: 1 });
 		const viewport = page.getViewport({ scale: targetWidth / base.width });
 		const dpr = Math.max(window.devicePixelRatio || 1, 1);
-		const canvas = document.createElement("canvas");
+		const canvas = createEl("canvas");
 		canvas.width = Math.floor(viewport.width * dpr);
 		canvas.height = Math.floor(viewport.height * dpr);
 		canvas.style.width = `${Math.floor(viewport.width)}px`;
@@ -190,10 +202,7 @@ export class PdfRenderer {
 
 		const highlightLayer = wrapper.createDiv({ cls: "pr-highlight-layer" });
 
-		const inkLayer = document.createElementNS(
-			"http://www.w3.org/2000/svg",
-			"svg"
-		);
+		const inkLayer = createSvg("svg");
 		inkLayer.classList.add("pr-ink-layer");
 		wrapper.appendChild(inkLayer);
 

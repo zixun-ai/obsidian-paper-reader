@@ -1,7 +1,5 @@
 import type { Annotation } from "../storage/annotationStore";
 
-const SVG_NS = "http://www.w3.org/2000/svg";
-
 export type RectangleHandle = "move" | "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 export interface RectangleBounds { x: number; y: number; width: number; height: number }
 
@@ -48,7 +46,7 @@ function strokePath(points: number[], scale: number): string {
 }
 
 function makePath(ann: Annotation, scale: number, colorHex: string): SVGPathElement {
-	const path = document.createElementNS(SVG_NS, "path");
+	const path = createSvg("path");
 	path.setAttribute("d", strokePath(ann.ink!.points, scale));
 	path.setAttribute("fill", "none");
 	path.setAttribute("stroke", colorHex);
@@ -82,7 +80,7 @@ export function renderInkStrokes(
 		svg.appendChild(path);
 		if (ann.id === selectedId && ann.ink.shape === "rectangle") {
 			const b = inkBoundingRect(ann.ink.points);
-			const selection = document.createElementNS(SVG_NS, "rect");
+			const selection = createSvg("rect");
 			selection.setAttribute("x", String(b.x * scale));
 			selection.setAttribute("y", String(b.y * scale));
 			selection.setAttribute("width", String(b.width * scale));
@@ -98,7 +96,7 @@ export function renderInkStrokes(
 				["w", b.x, b.y + b.height / 2],
 			];
 			for (const [handle, x, y] of handles) {
-				const dot = document.createElementNS(SVG_NS, "circle");
+				const dot = createSvg("circle");
 				dot.setAttribute("cx", String(x * scale));
 				dot.setAttribute("cy", String(y * scale));
 				dot.setAttribute("r", "4.5");
@@ -131,7 +129,7 @@ export function beginInkStroke(
 	startY: number
 ): LiveStroke {
 	const points: number[] = [startX, startY];
-	const path = document.createElementNS(SVG_NS, "path");
+	const path = createSvg("path");
 	path.setAttribute("fill", "none");
 	path.setAttribute("stroke", colorHex);
 	path.setAttribute("stroke-width", String(width * scale));
@@ -177,7 +175,7 @@ export function beginInkRectangle(
 	let endX = startX;
 	let endY = startY;
 	let points = rectanglePoints(startX, startY, 0, 0);
-	const path = document.createElementNS(SVG_NS, "path");
+	const path = createSvg("path");
 	path.setAttribute("fill", "none");
 	path.setAttribute("stroke", colorHex);
 	path.setAttribute("stroke-width", String(width * scale));

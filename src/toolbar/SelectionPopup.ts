@@ -203,7 +203,7 @@ export class SelectionPopup {
 		this.noteInput.addEventListener("keydown", (e: KeyboardEvent) => {
 			if (e.key === "Enter" && !e.isComposing) {
 				e.preventDefault();
-				submit();
+				void submit();
 			}
 			e.stopPropagation();
 		});
@@ -212,7 +212,7 @@ export class SelectionPopup {
 		addBtn.setAttr("aria-label", this.editTarget ? "保存批注" : "添加批注");
 		addBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
-			submit();
+			void submit();
 		});
 
 		if (this.editTarget && this.deps.deleteAnnotation) {
