@@ -19,6 +19,8 @@ export interface InkStroke {
 	/** stroke width in unscaled page units */
 	width: number;
 	points: number[];
+	/** semantic shape marker; absent means freehand ink (back-compat) */
+	shape?: "rectangle";
 }
 
 export interface Annotation {

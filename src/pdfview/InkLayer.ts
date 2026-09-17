@@ -1,6 +1,36 @@
 import type { Annotation } from "../storage/annotationStore";
 
-const SVG_NS = "http://www.w3.org/2000/svg";
+export type RectangleHandle = "move" | "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
+export interface RectangleBounds { x: number; y: number; width: number; height: number }
+
+export function rectanglePoints(x: number, y: number, width: number, height: number): number[] {
+	return [x, y, x + width, y, x + width, y + height, x, y + height, x, y];
+}
+
+export function transformRectangle(
+	b: RectangleBounds,
+	handle: RectangleHandle,
+	dx: number,
+	dy: number,
+	pageWidth: number,
+	pageHeight: number,
+	minSize = 1
+): RectangleBounds {
+	if (handle === "move") {
+		return {
+			x: Math.max(0, Math.min(b.x + dx, pageWidth - b.width)),
+			y: Math.max(0, Math.min(b.y + dy, pageHeight - b.height)),
+			width: b.width,
+			height: b.height,
+		};
+	}
+	let left = b.x, top = b.y, right = b.x + b.width, bottom = b.y + b.height;
+	if (handle.includes("w")) left = Math.max(0, Math.min(left + dx, right - minSize));
+	if (handle.includes("e")) right = Math.min(pageWidth, Math.max(right + dx, left + minSize));
+	if (handle.includes("n")) top = Math.max(0, Math.min(top + dy, bottom - minSize));
+	if (handle.includes("s")) bottom = Math.min(pageHeight, Math.max(bottom + dy, top + minSize));
+	return { x: left, y: top, width: right - left, height: bottom - top };
+}
 
 function strokePath(points: number[], scale: number): string {
 	if (points.length < 2) return "";
@@ -16,7 +46,7 @@ function strokePath(points: number[], scale: number): string {
 }
 
 function makePath(ann: Annotation, scale: number, colorHex: string): SVGPathElement {
-	const path = document.createElementNS(SVG_NS, "path");
+	const path = createSvg("path");
 	path.setAttribute("d", strokePath(ann.ink!.points, scale));
 	path.setAttribute("fill", "none");
 	path.setAttribute("stroke", colorHex);
@@ -48,13 +78,41 @@ export function renderInkStrokes(
 			onStrokeClick(ann, e.clientX, e.clientY);
 		});
 		svg.appendChild(path);
+		if (ann.id === selectedId && ann.ink.shape === "rectangle") {
+			const b = inkBoundingRect(ann.ink.points);
+			const selection = createSvg("rect");
+			selection.setAttribute("x", String(b.x * scale));
+			selection.setAttribute("y", String(b.y * scale));
+			selection.setAttribute("width", String(b.width * scale));
+			selection.setAttribute("height", String(b.height * scale));
+			selection.classList.add("pr-ink-selection");
+			selection.dataset.annotationId = ann.id;
+			selection.dataset.inkHandle = "move";
+			svg.appendChild(selection);
+			const handles: [RectangleHandle, number, number][] = [
+				["nw", b.x, b.y], ["n", b.x + b.width / 2, b.y], ["ne", b.x + b.width, b.y],
+				["e", b.x + b.width, b.y + b.height / 2], ["se", b.x + b.width, b.y + b.height],
+				["s", b.x + b.width / 2, b.y + b.height], ["sw", b.x, b.y + b.height],
+				["w", b.x, b.y + b.height / 2],
+			];
+			for (const [handle, x, y] of handles) {
+				const dot = createSvg("circle");
+				dot.setAttribute("cx", String(x * scale));
+				dot.setAttribute("cy", String(y * scale));
+				dot.setAttribute("r", "4.5");
+				dot.classList.add("pr-ink-handle", `pr-ink-handle-${handle}`);
+				dot.dataset.annotationId = ann.id;
+				dot.dataset.inkHandle = handle;
+				svg.appendChild(dot);
+			}
+		}
 	}
 }
 
 export interface LiveStroke {
 	addPoint(x: number, y: number): void;
 	/** returns the finished stroke, or null when too few points */
-	finish(): { width: number; points: number[] } | null;
+	finish(): { width: number; points: number[]; shape?: "rectangle" } | null;
 	discard(): void;
 }
 
@@ -71,7 +129,7 @@ export function beginInkStroke(
 	startY: number
 ): LiveStroke {
 	const points: number[] = [startX, startY];
-	const path = document.createElementNS(SVG_NS, "path");
+	const path = createSvg("path");
 	path.setAttribute("fill", "none");
 	path.setAttribute("stroke", colorHex);
 	path.setAttribute("stroke-width", String(width * scale));
@@ -98,6 +156,45 @@ export function beginInkStroke(
 			path.remove();
 			if (points.length < 4) return null; // need at least 2 points
 			return { width, points };
+		},
+		discard() {
+			path.remove();
+		},
+	};
+}
+
+/** Live hollow rectangle stored as a closed ink path. */
+export function beginInkRectangle(
+	svg: SVGSVGElement,
+	colorHex: string,
+	width: number,
+	scale: number,
+	startX: number,
+	startY: number
+): LiveStroke {
+	let endX = startX;
+	let endY = startY;
+	let points = rectanglePoints(startX, startY, 0, 0);
+	const path = createSvg("path");
+	path.setAttribute("fill", "none");
+	path.setAttribute("stroke", colorHex);
+	path.setAttribute("stroke-width", String(width * scale));
+	path.setAttribute("stroke-linejoin", "round");
+	path.classList.add("pr-ink-live");
+	svg.appendChild(path);
+
+	return {
+		addPoint(x: number, y: number): void {
+			endX = x;
+			endY = y;
+			const left = Math.min(startX, endX), top = Math.min(startY, endY);
+			points = rectanglePoints(left, top, Math.abs(endX - startX), Math.abs(endY - startY));
+			path.setAttribute("d", strokePath(points, scale));
+		},
+		finish() {
+			path.remove();
+			if (Math.abs(endX - startX) * scale < 2 || Math.abs(endY - startY) * scale < 2) return null;
+			return { width, points, shape: "rectangle" };
 		},
 		discard() {
 			path.remove();

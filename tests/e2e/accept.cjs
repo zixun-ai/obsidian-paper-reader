@@ -140,6 +140,11 @@ function check(label, cond, detail = "") {
 		return window.__h.inkInfo();
 	});
 	check("重开后笔迹恢复", inkRestored.anns === 1 && inkRestored.paths === 1, JSON.stringify(inkRestored));
+	const rectangle = await page.evaluate(() => window.__h.drawRectangle());
+	check("矩形框生成闭合四边路径", rectangle.points.length === 10 &&
+		rectangle.points[0] === rectangle.points.at(-2) && rectangle.points[1] === rectangle.points.at(-1) &&
+		rectangle.paths === 0 && rectangle.shape === "rectangle" &&
+		rectangle.handles === 8 && rectangle.selection === 1, JSON.stringify(rectangle));
 
 	const undoRedo = await page.evaluate(async () => {
 		const r = {};
@@ -170,6 +175,10 @@ function check(label, cond, detail = "") {
 	}));
 	check("搜索命中且定位页码", search.hit.total >= 1 && search.hit.firstPage === 1, JSON.stringify(search.hit));
 	check("无结果搜索返回 0", search.miss.total === 0);
+	const uiRegression = await page.evaluate(() => window.__h.uiRegressionInfo());
+	check("搜索栏隐藏规则可关闭搜索栏", uiRegression.searchHidden, JSON.stringify(uiRegression));
+	check("删除批注按钮内容不溢出遮挡相邻控件", uiRegression.deleteFits, JSON.stringify(uiRegression));
+	check("矩形编辑器显示线宽且隐藏文本样式", uiRegression.rectangleWidths === 3 && uiRegression.rectangleTextStyles === 0, JSON.stringify(uiRegression));
 
 	// 8) annotation list reflects current data
 	const listInfo = await page.evaluate(() => ({

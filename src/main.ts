@@ -37,8 +37,8 @@ export default class PaperReaderPlugin extends Plugin {
 		});
 
 		this.addCommand({
-			id: "open-paper-reader",
-			name: "Open paper reader",
+			id: "open-active-pdf",
+			name: "Open active PDF",
 			callback: () => void this.openActivePdf(),
 		});
 
@@ -156,7 +156,7 @@ export default class PaperReaderPlugin extends Plugin {
 			type: VIEW_TYPE_PAPER_READER,
 			state: { file: file.path, ...(page ? { page } : {}) },
 		});
-		this.app.workspace.revealLeaf(leaf);
+		await this.app.workspace.revealLeaf(leaf);
 	}
 
 	/** Re-point tabs currently using the core PDF viewer at our view. */

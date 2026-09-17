@@ -22,10 +22,11 @@ function decorate(): void {
 		this.appendChild(d);
 		return d;
 	};
-	proto.createEl = function (tag: string, o?: { cls?: string; attr?: Record<string, string> }) {
+	proto.createEl = function (tag: string, o?: { cls?: string; attr?: Record<string, string>; text?: string }) {
 		const d = document.createElement(tag);
 		if (o?.cls) d.className = o.cls;
 		if (o?.attr) for (const [k, v] of Object.entries(o.attr)) d.setAttribute(k, v);
+		if (o?.text) d.textContent = o.text;
 		this.appendChild(d);
 		return d;
 	};
@@ -94,6 +95,7 @@ import { LlmClient } from "../../src/llm/client";
 import { buildTranslateMessages } from "../../src/llm/prompts";
 import {
 	LiveStroke,
+	beginInkRectangle,
 	beginInkStroke,
 	inkBoundingRect,
 	renderInkStrokes,
@@ -101,6 +103,7 @@ import {
 import { AnnotationHistory } from "../../src/history/AnnotationHistory";
 import { AnnotationList, inkPreviewSvg } from "../../src/pdfview/AnnotationList";
 import { findHits } from "../../src/search/searchText";
+import { SelectionPopup } from "../../src/toolbar/SelectionPopup";
 
 class MemAdapter {
 	files = new Map<string, string>();
@@ -238,18 +241,13 @@ class Harness {
 	}
 
 	async translate(payload: SelectionPayload): Promise<string> {
-		// mock LLM via SSE fetch interception
-		const sse = [
-			'data: {"choices":[{"delta":{"content":"滑坡"}}]}',
-			'data: {"choices":[{"delta":{"content":"智能体"}}]}',
-			"data: [DONE]",
-		].join("\n\n");
+		// mock the non-streaming Obsidian requestUrl transport
 		window.fetch = async () =>
-			new Response(sse, {
+			new Response(JSON.stringify({ choices: [{ message: { content: "滑坡智能体" } }] }), {
 				status: 200,
-				headers: { "Content-Type": "text/event-stream" },
+				headers: { "Content-Type": "application/json" },
 			});
-		const client = new LlmClient(() => ({
+		const client = new LlmClient(this.app as never, () => ({
 			baseUrl: "https://mock.local/v1/",
 			apiKey: "sk-test",
 			model: "mock-model",
@@ -297,6 +295,54 @@ class Harness {
 		await this.store.save(PDF_PATH, this.data);
 		this.redrawInkAll();
 		return { id: ann.id, paths: this.pageEl!.querySelectorAll(".pr-ink-path").length };
+	}
+
+	drawRectangle(): { points: number[]; paths: number; shape?: string; handles: number; selection: number } {
+		const inkLayer = this.pageEl!.querySelector("svg.pr-ink-layer") as SVGSVGElement;
+		const live = beginInkRectangle(inkLayer, "#F5C542", 4, SCALE, 40, 50);
+		live.addPoint(140, 110);
+		const ink = live.finish();
+		if (!ink) throw new Error("rectangle.finish returned null");
+		const ann: Annotation = {
+			id: "test-rectangle", type: "ink", page: 1, rects: [inkBoundingRect(ink.points)],
+			text: "", color: "yellow", ink, createdAt: new Date().toISOString(),
+			textOffset: -1, contextBefore: "", contextAfter: "",
+		};
+		renderInkStrokes(inkLayer, [ann], SCALE, { yellow: "#F5C542" }, () => {}, ann.id);
+		return {
+			points: ink.points, shape: ink.shape,
+			paths: inkLayer.querySelectorAll(".pr-ink-live").length,
+			handles: inkLayer.querySelectorAll(".pr-ink-handle").length,
+			selection: inkLayer.querySelectorAll(".pr-ink-selection").length,
+		};
+	}
+
+	uiRegressionInfo(): { searchHidden: boolean; deleteFits: boolean; rectangleWidths: number; rectangleTextStyles: number } {
+		const search = document.body.createDiv({ cls: "pr-searchbar pr-hidden" });
+		const ann: Annotation = {
+			id: "popup-rectangle", type: "ink", page: 1, rects: [], text: "", color: "yellow",
+			ink: { width: 4, points: [], shape: "rectangle" }, createdAt: new Date().toISOString(),
+			textOffset: -1, contextBefore: "", contextAfter: "",
+		};
+		const popup = new SelectionPopup({
+			getColors: () => ({ yellow: "#F5C542" }), getStyle: () => "highlight",
+			setStyle: () => {}, setInkWidth: () => {}, applyAnnotation: () => {}, copySelection: () => {},
+			submitNote: async () => true, deleteAnnotation: async () => {},
+			translate: async () => "", insertTranslation: async () => {},
+			getCached: () => undefined, setCached: () => {},
+		});
+		popup.showEdit(ann, 100, 100);
+		const actions = Array.from(document.querySelectorAll(".pr-popup-actions button")) as HTMLElement[];
+		const del = actions.at(-1)!;
+		const result = {
+			searchHidden: getComputedStyle(search).display === "none",
+			deleteFits: del.textContent === "" && del.scrollWidth <= del.clientWidth,
+			rectangleWidths: document.querySelectorAll(".pr-popup-width-btn").length,
+			rectangleTextStyles: document.querySelectorAll(".pr-popup-styles").length,
+		};
+		popup.hide();
+		search.remove();
+		return result;
 	}
 
 	private redrawInkAll(): void {

@@ -69,5 +69,5 @@ export function cloneAnnotation(ann: Annotation): Annotation {
 
 /** clone helper for ink point arrays */
 export function cloneInk(ink: InkStroke): InkStroke {
-	return { width: ink.width, points: [...ink.points] };
+	return { width: ink.width, points: [...ink.points], shape: ink.shape };
 }

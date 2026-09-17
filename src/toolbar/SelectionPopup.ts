@@ -9,6 +9,7 @@ export interface SelectionPopupDeps {
 	getStyle: () => AnnotationStyle;
 	/** style button clicked: update session default (and edit target, if any) */
 	setStyle: (style: AnnotationStyle) => void;
+	setInkWidth?: (width: number) => void;
 	/** color dot clicked: create annotation from selection, or recolor edit target */
 	applyAnnotation: (colorKey: string) => void;
 	copySelection: () => void;
@@ -83,6 +84,10 @@ export class SelectionPopup {
 		return this.payload;
 	}
 
+	focusNote(): void {
+		this.noteInput?.focus();
+	}
+
 	hide(): void {
 		this.generation++;
 		this.el?.remove();
@@ -120,41 +125,57 @@ export class SelectionPopup {
 			});
 		}
 
-		// row 2: annotation style picker
-		const stylesRow = el.createDiv({ cls: "pr-popup-styles" });
+		// row 2: text style picker, or rectangle stroke width
 		this.styleBtns.clear();
-		const currentStyle = this.editTarget?.style ?? this.deps.getStyle();
-		for (const { key, icon, label } of STYLE_ORDER) {
-			const btn = stylesRow.createEl("button", { cls: "pr-popup-style-btn" });
-			btn.setAttr("aria-label", label);
-			if (icon) setIcon(btn, icon);
-			else {
-				const svg = btn.createSvg("svg", { attr: {
-					viewBox: "0 0 24 24", fill: "none", stroke: "currentColor",
-					"stroke-width": "2", "stroke-linecap": "round",
-				} });
-				svg.createSvg("path", { attr: { d: "M2 14 Q 5 8 8 14 T 14 14 T 20 14 T 26 14" } });
+		if (this.editTarget?.ink?.shape === "rectangle") {
+			const widthsRow = el.createDiv({ cls: "pr-popup-widths" });
+			for (const width of [2, 4, 7]) {
+				const btn = widthsRow.createEl("button", { cls: "pr-popup-width-btn" });
+				btn.setAttr("aria-label", `线宽 ${width}`);
+				btn.createSpan({ cls: "pr-popup-width-line" }).style.height = `${width}px`;
+				if (this.editTarget.ink.width === width) btn.addClass("pr-popup-style-active");
+				btn.addEventListener("click", (e) => {
+					e.stopPropagation();
+					this.deps.setInkWidth?.(width);
+					for (const sibling of Array.from(widthsRow.children)) sibling.removeClass("pr-popup-style-active");
+					btn.addClass("pr-popup-style-active");
+				});
 			}
-			if (key === currentStyle) btn.addClass("pr-popup-style-active");
-			btn.addEventListener("click", (e) => {
-				e.stopPropagation();
-				this.deps.setStyle(key);
-				for (const [k, b] of this.styleBtns) {
-					b.toggleClass("pr-popup-style-active", k === key);
+		} else {
+			const stylesRow = el.createDiv({ cls: "pr-popup-styles" });
+			const currentStyle = this.editTarget?.style ?? this.deps.getStyle();
+			for (const { key, icon, label } of STYLE_ORDER) {
+				const btn = stylesRow.createEl("button", { cls: "pr-popup-style-btn" });
+				btn.setAttr("aria-label", label);
+				if (icon) setIcon(btn, icon);
+				else {
+					const svg = btn.createSvg("svg", { attr: {
+						viewBox: "0 0 24 24", fill: "none", stroke: "currentColor",
+						"stroke-width": "2", "stroke-linecap": "round",
+					} });
+					svg.createSvg("path", { attr: { d: "M2 14 Q 5 8 8 14 T 14 14 T 20 14 T 26 14" } });
 				}
-			});
-			this.styleBtns.set(key, btn);
+				if (key === currentStyle) btn.addClass("pr-popup-style-active");
+				btn.addEventListener("click", (e) => {
+					e.stopPropagation();
+					this.deps.setStyle(key);
+					for (const [k, b] of this.styleBtns) b.toggleClass("pr-popup-style-active", k === key);
+				});
+				this.styleBtns.set(key, btn);
+			}
 		}
 
 		// row 3: copy + note input
 		const actionsRow = el.createDiv({ cls: "pr-popup-actions" });
-		const copyBtn = actionsRow.createEl("button", { cls: "pr-popup-btn" });
-		setIcon(copyBtn, "copy");
-		copyBtn.setAttr("aria-label", "复制");
-		copyBtn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			this.deps.copySelection();
-		});
+		if (!this.editTarget) {
+			const copyBtn = actionsRow.createEl("button", { cls: "pr-popup-btn" });
+			setIcon(copyBtn, "copy");
+			copyBtn.setAttr("aria-label", "复制");
+			copyBtn.addEventListener("click", (e) => {
+				e.stopPropagation();
+				this.deps.copySelection();
+			});
+		}
 		this.noteInput = actionsRow.createEl("input", {
 			cls: "pr-popup-note-input",
 			attr: { type: "text", placeholder: "添加批注…" },
@@ -182,7 +203,7 @@ export class SelectionPopup {
 		this.noteInput.addEventListener("keydown", (e: KeyboardEvent) => {
 			if (e.key === "Enter" && !e.isComposing) {
 				e.preventDefault();
-				submit();
+				void submit();
 			}
 			e.stopPropagation();
 		});
@@ -191,12 +212,13 @@ export class SelectionPopup {
 		addBtn.setAttr("aria-label", this.editTarget ? "保存批注" : "添加批注");
 		addBtn.addEventListener("click", (e) => {
 			e.stopPropagation();
-			submit();
+			void submit();
 		});
 
 		if (this.editTarget && this.deps.deleteAnnotation) {
 			const id = this.editTarget.id;
-			const del = actionsRow.createEl("button", { cls: "pr-popup-btn", text: "删除批注" });
+			const del = actionsRow.createEl("button", { cls: "pr-popup-btn" });
+			setIcon(del, "trash-2");
 			del.setAttr("aria-label", "删除批注");
 			del.addEventListener("click", (e) => {
 				e.stopPropagation();
