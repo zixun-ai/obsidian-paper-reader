@@ -1,5 +1,5 @@
 import { App, Notice, PluginSettingTab } from "obsidian";
-import type { HexString, SettingDefinitionItem } from "obsidian";
+import type { SettingDefinitionItem } from "obsidian";
 import type PaperReaderPlugin from "./main";
 import { LlmClient } from "./llm/client";
 
@@ -138,7 +138,7 @@ export class PaperReaderSettingTab extends PluginSettingTab {
 
 	getControlValue(key: string): unknown {
 		if (key.startsWith("color.")) {
-			return this.plugin.settings.highlightColors[key.slice(6) as HighlightColorKey] as HexString;
+			return this.plugin.settings.highlightColors[key.slice(6) as HighlightColorKey];
 		}
 		return this.plugin.settings[key as keyof PaperReaderSettings];
 	}

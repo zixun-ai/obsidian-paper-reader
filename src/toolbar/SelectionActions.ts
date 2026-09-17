@@ -114,12 +114,11 @@ export class SelectionActions {
 		for (const key of COLOR_KEYS) {
 			menu.addItem((item) => {
 				// color dot inside the title; setChecked shows a ✓ on the left
-				const frag = document.createDocumentFragment();
-				const dot = createSpan();
-				dot.className = "pr-menu-dot";
-				dot.style.backgroundColor = colors[key] ?? key;
-				frag.appendChild(dot);
-				frag.appendChild(document.createTextNode(COLOR_LABELS[key] ?? key));
+				const frag = createFragment((fragment) => {
+					const dot = fragment.createSpan({ cls: "pr-menu-dot" });
+					dot.style.backgroundColor = colors[key] ?? key;
+					fragment.createSpan({ text: COLOR_LABELS[key] ?? key });
+				});
 				item
 					.setTitle(frag)
 					.setChecked(this.callbacks.getColor() === key)
