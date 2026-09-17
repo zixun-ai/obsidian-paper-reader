@@ -6,9 +6,14 @@ import { SelectionPayload, rectsOverlap, sameSelection, selectionToPayload } fro
 import { PopupCachedState, PopupStateCache } from "./popupCache";
 import {
 	LiveStroke,
+	beginInkRectangle,
 	beginInkStroke,
 	inkBoundingRect,
+	rectanglePoints,
 	renderInkStrokes,
+	transformRectangle,
+	type RectangleBounds,
+	type RectangleHandle,
 } from "./InkLayer";
 import {
 	AnnotationHistory,
@@ -41,6 +46,11 @@ export const VIEW_TYPE_PAPER_READER = "paper-reader-view";
 
 type LayoutMode = "continuous" | "single" | "double-odd" | "double-even";
 type ZoomMode = "fit-width" | "fit-height" | "manual";
+type DrawingTool = "pen" | "rectangle" | null;
+type RectangleEdit = {
+	id: string; page: number; pointerId: number; handle: RectangleHandle;
+	startX: number; startY: number; bounds: RectangleBounds; before: Annotation;
+};
 
 const MIN_SCALE = 0.3;
 const MAX_SCALE = 5;
@@ -86,12 +96,13 @@ export class PaperReaderView extends ItemView {
 	private popupColor = "yellow";
 	private editingNoteId: string | null = null;
 
-	// pen tool state
-	private penActive = false;
+	// drawing tool state
+	private drawingTool: DrawingTool = null;
 	private penWidthIndex = 1; // 0 thin / 1 medium / 2 thick
 	private liveStroke: LiveStroke | null = null;
 	private liveStrokePage = 0;
 	private selectedInkId: string | null = null;
+	private rectangleEdit: RectangleEdit | null = null;
 
 	// undo/redo (session only, per document)
 	private history: AnnotationHistory;
@@ -127,6 +138,7 @@ export class PaperReaderView extends ItemView {
 			getColors: () => this.plugin.settings.highlightColors,
 			getStyle: () => this.popupStyle,
 			setStyle: (style) => void this.setPopupStyle(style),
+			setInkWidth: (width) => void this.setPopupInkWidth(width),
 			applyAnnotation: (color) => void this.applyPopupAnnotation(color),
 			copySelection: () => void this.copySelection(),
 			submitNote: (text) => this.submitNote(text),
@@ -233,14 +245,18 @@ export class PaperReaderView extends ItemView {
 		});
 		this.registerDomEvent(document, "keydown", (e: KeyboardEvent) => {
 			if (e.key === "Escape") {
+				if (this.rectangleEdit) {
+					this.cancelRectangleEdit();
+					return;
+				}
 				if (this.liveStroke) {
 					// discard the in-progress stroke, stay in pen mode
 					this.liveStroke.discard();
 					this.liveStroke = null;
 					return;
 				}
-				if (this.penActive) {
-					this.setPenActive(false);
+				if (this.drawingTool) {
+					this.setDrawingTool(null);
 					return;
 				}
 				this.popup.hide();
@@ -270,6 +286,12 @@ export class PaperReaderView extends ItemView {
 			const t = e.target as Node;
 			if (this.popup.isVisible && !this.popup.contains(t)) this.popup.hide();
 			if (this.hlMenu.isVisible && !this.hlMenu.contains(t)) this.hlMenu.hide();
+			const el = e.target as Element;
+			if (this.selectedInkId && !el.closest?.(".pr-ink-path, .pr-ink-selection, .pr-ink-handle, .pr-popup")) {
+				this.selectedInkId = null;
+				this.editingNoteId = null;
+				this.redrawAllInk();
+			}
 		});
 	}
 
@@ -279,6 +301,7 @@ export class PaperReaderView extends ItemView {
 			this.liveStroke.discard();
 			this.liveStroke = null;
 		}
+		this.cancelRectangleEdit();
 		this.panel?.close();
 		this.file = null;
 		this.popup.hide();
@@ -339,7 +362,7 @@ export class PaperReaderView extends ItemView {
 		this.editingNoteId = null;
 		this.popupCache.clear();
 		this.selectedInkId = null;
-		this.setPenActive(false);
+		this.setDrawingTool(null);
 		this.history.clear();
 		this.closeSearch();
 		this.currentPage = 1;
@@ -653,9 +676,13 @@ export class PaperReaderView extends ItemView {
 
 		// pen tool + width dropdown
 		this.penBtn = mkBtn("pencil", "画笔（再次点击或 Esc 退出）", () =>
-			this.setPenActive(!this.penActive)
+			this.setDrawingTool(this.drawingTool === "pen" ? null : "pen")
 		);
-		this.penBtn.toggleClass("pr-pen-on", this.penActive);
+		this.penBtn.toggleClass("pr-pen-on", this.drawingTool === "pen");
+		this.rectangleBtn = mkBtn("square", "矩形框（再次点击或 Esc 退出）", () =>
+			this.setDrawingTool(this.drawingTool === "rectangle" ? null : "rectangle")
+		);
+		this.rectangleBtn.toggleClass("pr-pen-on", this.drawingTool === "rectangle");
 		mkBtn("chevron-down", "画笔粗细", (e) => this.openPenMenu(e));
 
 		// undo / redo
@@ -674,7 +701,7 @@ export class PaperReaderView extends ItemView {
 				applyStyle: (style) => void this.applyHeaderStyle(style),
 				onClearHighlight: () => void this.clearHighlightsInSelection(),
 				onCopy: () => void this.copySelection(),
-				onNote: () => new Notice("批注：即将推出"),
+				onNote: () => this.openNotePopup(),
 				onTranslate: () =>
 					this.withPayload((p) => this.panel.openTranslate(p, this.contextTextFor(p))),
 				onExplain: () =>
@@ -1085,18 +1112,22 @@ export class PaperReaderView extends ItemView {
 
 	// ---- pen tool ----
 
-	private setPenActive(active: boolean): void {
-		if (this.penActive === active) return;
-		this.penActive = active;
-		if (!active && this.liveStroke) {
+	private setDrawingTool(tool: DrawingTool): void {
+		if (this.drawingTool === tool) return;
+		this.drawingTool = tool;
+		if (this.liveStroke) {
 			this.liveStroke.discard();
 			this.liveStroke = null;
 		}
-		this.pagesEl.toggleClass("pr-pen-mode", active);
-		this.penBtn?.toggleClass("pr-pen-on", active);
-		if (active) {
+		this.pagesEl.toggleClass("pr-pen-mode", tool !== null);
+		this.penBtn?.toggleClass("pr-pen-on", tool === "pen");
+		this.rectangleBtn?.toggleClass("pr-pen-on", tool === "rectangle");
+		if (tool) {
 			this.popup.hide();
 			this.clearSelection();
+			this.selectedInkId = null;
+			this.editingNoteId = null;
+			this.redrawAllInk();
 		}
 	}
 
@@ -1105,6 +1136,7 @@ export class PaperReaderView extends ItemView {
 	}
 
 	private penBtn: HTMLButtonElement | null = null;
+	private rectangleBtn: HTMLButtonElement | null = null;
 
 	private penWidthPx(): number {
 		return [2, 4, 7][this.penWidthIndex] ?? 4;
@@ -1118,16 +1150,34 @@ export class PaperReaderView extends ItemView {
 	}
 
 	private onPenPointerDown(e: PointerEvent): void {
-		if (!this.penActive || e.button !== 0 || this.liveStroke) return;
+		if (e.button !== 0 || this.liveStroke || this.rectangleEdit) return;
+		const editTarget = (e.target as Element).closest?.<SVGElement>("[data-ink-handle]");
+		if (!this.drawingTool && editTarget?.dataset.annotationId && editTarget.dataset.inkHandle) {
+			const ann = this.data.annotations.find((a) => a.id === editTarget.dataset.annotationId);
+			const page = ann && this.pages.find((p) => p.pageNumber === ann.page);
+			if (ann?.ink?.shape === "rectangle" && page) {
+				const point = this.pointOnPage(e, page);
+				this.rectangleEdit = {
+					id: ann.id, page: ann.page, pointerId: e.pointerId,
+					handle: editTarget.dataset.inkHandle as RectangleHandle,
+					startX: point.x, startY: point.y,
+					bounds: inkBoundingRect(ann.ink.points), before: cloneAnnotation(ann),
+				};
+				e.preventDefault();
+				e.stopPropagation();
+				this.scrollEl.setPointerCapture(e.pointerId);
+				return;
+			}
+		}
+		if (!this.drawingTool) return;
 		const page = this.pageFromEvent(e);
 		if (!page) return;
 		e.preventDefault();
 		e.stopPropagation();
-		const rect = page.wrapper.getBoundingClientRect();
-		const x = Math.min(Math.max((e.clientX - rect.left) / this.scale, 0), page.widthAtScale1);
-		const y = Math.min(Math.max((e.clientY - rect.top) / this.scale, 0), page.heightAtScale1);
+		const { x, y } = this.pointOnPage(e, page);
 		this.liveStrokePage = page.pageNumber;
-		this.liveStroke = beginInkStroke(
+		const begin = this.drawingTool === "rectangle" ? beginInkRectangle : beginInkStroke;
+		this.liveStroke = begin(
 			page.inkLayer,
 			(this.plugin.settings.highlightColors as Record<string, string>)[this.popupColor] ??
 				this.popupColor,
@@ -1140,17 +1190,35 @@ export class PaperReaderView extends ItemView {
 	}
 
 	private onPenPointerMove(e: PointerEvent): void {
+		if (this.rectangleEdit) {
+			const edit = this.rectangleEdit;
+			const ann = this.data.annotations.find((a) => a.id === edit.id);
+			const page = this.pages.find((p) => p.pageNumber === edit.page);
+			if (!ann?.ink || !page) return;
+			e.preventDefault();
+			const point = this.pointOnPage(e, page);
+			const bounds = transformRectangle(
+				edit.bounds, edit.handle, point.x - edit.startX, point.y - edit.startY,
+				page.widthAtScale1, page.heightAtScale1, 8 / this.scale
+			);
+			ann.ink.points = rectanglePoints(bounds.x, bounds.y, bounds.width, bounds.height);
+			ann.rects = [bounds];
+			this.redrawInk(page);
+			return;
+		}
 		if (!this.liveStroke) return;
 		const page = this.pages.find((p) => p.pageNumber === this.liveStrokePage);
 		if (!page) return;
 		e.preventDefault();
-		const rect = page.wrapper.getBoundingClientRect();
-		const x = Math.min(Math.max((e.clientX - rect.left) / this.scale, 0), page.widthAtScale1);
-		const y = Math.min(Math.max((e.clientY - rect.top) / this.scale, 0), page.heightAtScale1);
+		const { x, y } = this.pointOnPage(e, page);
 		this.liveStroke.addPoint(x, y);
 	}
 
 	private onPenPointerEnd(e: PointerEvent, commit: boolean): void {
+		if (this.rectangleEdit) {
+			void this.finishRectangleEdit(e.pointerId, commit);
+			return;
+		}
 		const stroke = this.liveStroke;
 		if (!stroke) return;
 		this.liveStroke = null;
@@ -1179,9 +1247,57 @@ export class PaperReaderView extends ItemView {
 		};
 		this.data.annotations.push(ann);
 		void this.persistAndRefresh([page]).then((ok) => {
-			if (ok) this.history.push({ kind: "add", ann });
+			if (ok) {
+				this.history.push({ kind: "add", ann });
+				if (ink.shape === "rectangle") {
+					this.setDrawingTool(null);
+					this.selectedInkId = ann.id;
+					this.editingNoteId = ann.id;
+					this.redrawAllInk();
+					this.popup.showEdit(ann, e.clientX, e.clientY);
+				}
+			}
 			else this.data.annotations = this.data.annotations.filter((a) => a.id !== ann.id);
 		});
+	}
+
+	private pointOnPage(e: PointerEvent, page: RenderedPage): { x: number; y: number } {
+		const rect = page.wrapper.getBoundingClientRect();
+		return {
+			x: Math.min(Math.max((e.clientX - rect.left) / this.scale, 0), page.widthAtScale1),
+			y: Math.min(Math.max((e.clientY - rect.top) / this.scale, 0), page.heightAtScale1),
+		};
+	}
+
+	private cancelRectangleEdit(): void {
+		const edit = this.rectangleEdit;
+		if (!edit) return;
+		const ann = this.data.annotations.find((a) => a.id === edit.id);
+		if (ann) Object.assign(ann, edit.before);
+		if (this.scrollEl?.hasPointerCapture(edit.pointerId)) this.scrollEl.releasePointerCapture(edit.pointerId);
+		this.rectangleEdit = null;
+		this.redrawAllInk();
+	}
+
+	private async finishRectangleEdit(pointerId: number, commit: boolean): Promise<void> {
+		const edit = this.rectangleEdit;
+		if (!edit) return;
+		this.rectangleEdit = null;
+		if (this.scrollEl.hasPointerCapture(pointerId)) this.scrollEl.releasePointerCapture(pointerId);
+		const ann = this.data.annotations.find((a) => a.id === edit.id);
+		if (!ann) return;
+		if (!commit) {
+			Object.assign(ann, edit.before);
+			this.redrawAllInk();
+			return;
+		}
+		if (JSON.stringify(ann.ink?.points) === JSON.stringify(edit.before.ink?.points)) return;
+		if (!(await this.persistAndRefresh([edit.page]))) {
+			Object.assign(ann, edit.before);
+			this.redrawAllInk();
+			return;
+		}
+		this.history.push({ kind: "update", before: edit.before, after: cloneAnnotation(ann) });
 	}
 
 	private redrawInk(page: RenderedPage): void {
@@ -1202,8 +1318,14 @@ export class PaperReaderView extends ItemView {
 	private onInkClick(ann: Annotation, x: number, y: number): void {
 		this.selectedInkId = ann.id;
 		this.redrawAllInk();
-		this.popup.hide();
-		this.hlMenu.show(x, y, ann.color);
+		if (ann.ink?.shape === "rectangle") {
+			this.editingNoteId = ann.id;
+			this.hlMenu.hide();
+			this.popup.showEdit(ann, x, y);
+		} else {
+			this.popup.hide();
+			this.hlMenu.show(x, y, ann.color);
+		}
 	}
 
 	// ---- undo / redo ----
@@ -1379,6 +1501,14 @@ export class PaperReaderView extends ItemView {
 		}, 0);
 	}
 
+	private openNotePopup(): void {
+		if (!this.currentPayload) return;
+		this.editingNoteId = null;
+		this.hlMenu.hide();
+		this.popup.show(this.currentPayload);
+		this.popup.focusNote();
+	}
+
 	private withPayload(fn: (payload: SelectionPayload) => void): void {
 		if (!this.currentPayload) {
 			new Notice("请先在 PDF 中选择文字");
@@ -1464,6 +1594,18 @@ export class PaperReaderView extends ItemView {
 				this.history.push({ kind: "update", before, after: cloneAnnotation(ann) });
 			}
 		}
+	}
+
+	private async setPopupInkWidth(width: number): Promise<void> {
+		const ann = this.data.annotations.find((a) => a.id === this.editingNoteId);
+		if (!ann?.ink || !this.file || ann.ink.width === width) return;
+		const before = cloneAnnotation(ann);
+		ann.ink.width = width;
+		if (!(await this.persistAndRefresh([ann.page]))) {
+			Object.assign(ann, before);
+			return;
+		}
+		this.history.push({ kind: "update", before, after: cloneAnnotation(ann) });
 	}
 
 	/** note submitted in the popup: create a note annotation, or update the edit target */

@@ -1,6 +1,6 @@
 {
   "name": "obsidian-paper-reader",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "PDF paper reader with highlights and annotations for Obsidian.",
   "main": "main.js",
   "scripts": {

@@ -143,6 +143,25 @@ test("note deletion preserves draft on save failure and records undo after succe
  assert.equal(history[0].anns[0], note); assert.equal(history[0].indexes[0], 0);
 });
 
+test("header note action opens the note editor for the current selection", () => {
+	const { PaperReaderView } = load("src/pdfview/PaperReaderView.ts");
+	let shown: unknown = null, focused = false, menuHidden = false;
+	const view = Object.create(PaperReaderView.prototype);
+	Object.assign(view, {
+		currentPayload: A, editingNoteId: "old",
+		hlMenu: { hide: () => { menuHidden = true; } },
+		popup: {
+			show: (payload: unknown) => { shown = payload; },
+			focusNote: () => { focused = true; },
+		},
+	});
+	view.openNotePopup();
+	assert.equal(shown, A);
+	assert.equal(focused, true);
+	assert.equal(menuHidden, true);
+	assert.equal(view.editingNoteId, null);
+});
+
 test("answer renders Markdown before stream completion and flushes the last chunk", async () => {
  const rendered: string[] = [];
  const { AnswerPanel } = load("src/panel/AnswerPanel.ts", {

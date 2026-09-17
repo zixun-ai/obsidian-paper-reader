@@ -13,6 +13,11 @@ export function normalizePath(p: string): string {
 }
 export class App {}
 export class TFile {}
+export class PluginSettingTab {
+	containerEl = {} as HTMLElement;
+	constructor(..._args: unknown[]) {}
+}
+export class Setting {}
 export function setIcon(): void {}
 export async function requestUrl(): Promise<never> {
 	throw new Error("requestUrl not available in tests");
