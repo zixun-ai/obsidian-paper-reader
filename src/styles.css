@@ -241,7 +241,6 @@
 
 .pr-selection-rect {
 	position: absolute;
-	background: color-mix(in srgb, AccentColor, transparent 50%);
 }
 
 .pr-page.pr-selection-preview .textLayer ::selection {

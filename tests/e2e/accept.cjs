@@ -46,7 +46,7 @@ function check(label, cond, detail = "") {
 	const numPages = await page.evaluate(() => window.__h.loadPdf());
 	console.log(`PDF loaded, ${numPages} pages`);
 	const preview = await page.evaluate(() => window.__h.previewTitleSelection());
-	check("多行实时选区逐行显示且不会叠色", preview.bands === 3 && !preview.overlaps && preview.nativeHidden && preview.text.includes("LandslideAgent"), JSON.stringify(preview));
+	check("多行实时选区可见且不会叠色", preview.bands === 3 && !preview.overlaps && preview.nativeHidden && preview.fillVisible && preview.text.includes("LandslideAgent"), JSON.stringify(preview));
 	await page.evaluate(() => window.__h.clearSelectionPreview());
 
 	// 1) select one line of the title and add a note

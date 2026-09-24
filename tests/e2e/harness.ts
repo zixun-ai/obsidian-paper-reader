@@ -168,7 +168,7 @@ class Harness {
 		return payload;
 	}
 
-	previewTitleSelection(): { bands: number; overlaps: boolean; nativeHidden: boolean; text: string } {
+	previewTitleSelection(): { bands: number; overlaps: boolean; nativeHidden: boolean; fillVisible: boolean; text: string } {
 		const spans = Array.from(this.pageEl!.querySelectorAll(".textLayer span"));
 		const first = spans.find(s => s.textContent?.startsWith("LandslideAgent"))!.firstChild!;
 		const last = spans.find(s => s.textContent?.startsWith("Autonomous Landslide"))!.firstChild!;
@@ -182,6 +182,7 @@ class Harness {
 			bands: bands.length,
 			overlaps: bands.some((box, i) => i > 0 && bands[i - 1].bottom > box.top + 0.1),
 			nativeHidden: getComputedStyle(first.parentElement as Element, "::selection").backgroundColor === "rgba(0, 0, 0, 0)",
+			fillVisible: getComputedStyle(layer.firstElementChild!).backgroundColor !== "rgba(0, 0, 0, 0)",
 			text: selection.toString(),
 		};
 	}
