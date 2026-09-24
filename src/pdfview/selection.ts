@@ -119,7 +119,7 @@ export function renderSelectionPreview(layer: HTMLElement, rects: HighlightRect[
 	layer.parentElement?.classList.toggle("pr-selection-preview", rects.length > 0);
 	for (const rect of separateSelectionLines(rects)) {
 		const el = layer.createDiv({ cls: "pr-selection-rect" });
-		el.style.backgroundColor = "rgba(122, 96, 255, 0.35)";
+		el.setCssStyles({ backgroundColor: "rgba(122, 96, 255, 0.35)" });
 		el.style.left = `${rect.x * scale}px`;
 		el.style.top = `${rect.y * scale}px`;
 		el.style.width = `${rect.width * scale}px`;
