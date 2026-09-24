@@ -118,13 +118,11 @@ export function renderSelectionPreview(layer: HTMLElement, rects: HighlightRect[
 	layer.replaceChildren();
 	layer.parentElement?.classList.toggle("pr-selection-preview", rects.length > 0);
 	for (const rect of separateSelectionLines(rects)) {
-		const el = document.createElement("div");
-		el.className = "pr-selection-rect";
+		const el = layer.createDiv({ cls: "pr-selection-rect" });
 		el.style.left = `${rect.x * scale}px`;
 		el.style.top = `${rect.y * scale}px`;
 		el.style.width = `${rect.width * scale}px`;
 		el.style.height = `${rect.height * scale}px`;
-		layer.appendChild(el);
 	}
 }
 
