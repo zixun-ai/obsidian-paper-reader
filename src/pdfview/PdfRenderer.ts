@@ -26,6 +26,8 @@ export interface RenderedPage {
 	wrapper: HTMLElement;
 	/** absolutely positioned overlay holding highlight rects */
 	highlightLayer: HTMLElement;
+	/** transient overlay for the active text selection */
+	selectionLayer: HTMLElement;
 	/** absolutely positioned SVG holding pen strokes */
 	inkLayer: SVGSVGElement;
 	/** unscaled page size (viewport at scale 1) */
@@ -201,6 +203,7 @@ export class PdfRenderer {
 		this.pageTexts.set(pageNumber, joined);
 
 		const highlightLayer = wrapper.createDiv({ cls: "pr-highlight-layer" });
+		const selectionLayer = wrapper.createDiv({ cls: "pr-selection-layer" });
 
 		const inkLayer = createSvg("svg");
 		inkLayer.classList.add("pr-ink-layer");
@@ -210,6 +213,7 @@ export class PdfRenderer {
 			pageNumber,
 			wrapper,
 			highlightLayer,
+			selectionLayer,
 			inkLayer,
 			widthAtScale1: baseViewport.width,
 			heightAtScale1: baseViewport.height,

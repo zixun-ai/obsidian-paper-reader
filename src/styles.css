@@ -233,6 +233,27 @@
 	border-radius: 1px;
 }
 
+.pr-selection-layer {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+}
+
+.pr-selection-rect {
+	position: absolute;
+	background: color-mix(in srgb, AccentColor, transparent 50%);
+}
+
+.pr-page.pr-selection-preview .textLayer ::selection {
+	background: transparent;
+	color: transparent;
+}
+
+.pr-page.pr-selection-preview .textLayer ::-moz-selection {
+	background: transparent;
+	color: transparent;
+}
+
 /* floating selection toolbar */
 .pr-toolbar {
 	position: fixed;

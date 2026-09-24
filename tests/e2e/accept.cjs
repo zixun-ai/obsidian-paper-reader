@@ -45,6 +45,9 @@ function check(label, cond, detail = "") {
 	check('三文件发布包加载并创建内嵌 Worker', bundledWorker);
 	const numPages = await page.evaluate(() => window.__h.loadPdf());
 	console.log(`PDF loaded, ${numPages} pages`);
+	const preview = await page.evaluate(() => window.__h.previewTitleSelection());
+	check("多行实时选区逐行显示且不会叠色", preview.bands === 3 && !preview.overlaps && preview.nativeHidden && preview.text.includes("LandslideAgent"), JSON.stringify(preview));
+	await page.evaluate(() => window.__h.clearSelectionPreview());
 
 	// 1) select one line of the title and add a note
 	const payloadJson = await page.evaluate(() => {
@@ -196,7 +199,7 @@ function check(label, cond, detail = "") {
 	});
 	check("重复导出被跳过且含回链", dup.same && dup.hasLink, JSON.stringify(dup));
 
-	const preview = await page.evaluate(() => {
+	const inkPreview = await page.evaluate(() => {
 		const ann = { ink: { width: 2, points: [10, 20, 30, 40] } };
 		const svg = window.__inkPreview(ann, 120);
 		const malicious = window.__inkPreview({ ink: { width: '2" onload="alert(1)', points: [0, 0] } });
@@ -207,7 +210,7 @@ function check(label, cond, detail = "") {
 			rejected: malicious === null,
 		};
 	});
-	check("画笔预览与 SVG 导出保留路径、尺寸并拒绝无效数据", preview.path === "M 4 4 L 24 24" && preview.size === "120" && preview.exported && preview.rejected, JSON.stringify(preview));
+	check("画笔预览与 SVG 导出保留路径、尺寸并拒绝无效数据", inkPreview.path === "M 4 4 L 24 24" && inkPreview.size === "120" && inkPreview.exported && inkPreview.rejected, JSON.stringify(inkPreview));
 
 	await browser.close();
 	if (failures > 0) {

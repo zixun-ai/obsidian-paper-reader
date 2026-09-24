@@ -82,7 +82,7 @@ configureBundledPdfWorker();
 
 import { configureBundledPdfWorker } from "../../src/pdfview/worker";
 import { PdfRenderer, configurePdfWorker } from "../../src/pdfview/PdfRenderer";
-import { selectionToPayload, SelectionPayload } from "../../src/pdfview/selection";
+import { renderSelectionPreview, selectionToPayload, SelectionPayload } from "../../src/pdfview/selection";
 import { renderHighlightRects } from "../../src/pdfview/HighlightLayer";
 import {
 	Annotation,
@@ -166,6 +166,29 @@ class Harness {
 		const payload = selectionToPayload(sel, SCALE, (p) => this.renderer.getPageText(p));
 		if (!payload) throw new Error("selectionToPayload returned null");
 		return payload;
+	}
+
+	previewTitleSelection(): { bands: number; overlaps: boolean; nativeHidden: boolean; text: string } {
+		const spans = Array.from(this.pageEl!.querySelectorAll(".textLayer span"));
+		const first = spans.find(s => s.textContent?.startsWith("LandslideAgent"))!.firstChild!;
+		const last = spans.find(s => s.textContent?.startsWith("Autonomous Landslide"))!.firstChild!;
+		const selection = window.getSelection()!;
+		selection.setBaseAndExtent(first, 0, last, last.textContent!.length);
+		const payload = selectionToPayload(selection, SCALE, p => this.renderer.getPageText(p))!;
+		const layer = this.pageEl!.querySelector<HTMLElement>(".pr-selection-layer")!;
+		renderSelectionPreview(layer, payload.rects, SCALE);
+		const bands = Array.from(layer.children, el => el.getBoundingClientRect()).sort((a, b) => a.top - b.top);
+		return {
+			bands: bands.length,
+			overlaps: bands.some((box, i) => i > 0 && bands[i - 1].bottom > box.top + 0.1),
+			nativeHidden: getComputedStyle(first.parentElement as Element, "::selection").backgroundColor === "rgba(0, 0, 0, 0)",
+			text: selection.toString(),
+		};
+	}
+
+	clearSelectionPreview(): void {
+		renderSelectionPreview(this.pageEl!.querySelector<HTMLElement>(".pr-selection-layer")!, [], SCALE);
+		window.getSelection()?.removeAllRanges();
 	}
 
 	async underlineTitle(scale: number, reverse: boolean): Promise<number> {

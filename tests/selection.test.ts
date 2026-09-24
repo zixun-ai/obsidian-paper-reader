@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
 	buildSingleLineRect,
 	filterMultiLineRects,
+	separateSelectionLines,
 	sameSelection,
 	RectLike,
 } from "../src/pdfview/selection";
@@ -50,6 +51,17 @@ test("multi-line filter: drops slivers, out-of-band, giant boxes, duplicates", (
 			[241, 236],
 		]
 	);
+});
+
+test("active selection bands cannot overlap across adjacent lines", () => {
+	const rects = separateSelectionLines([
+		{ x: 0, y: 0, width: 100, height: 30 },
+		{ x: 10, y: 24, width: 80, height: 30 },
+	]);
+	assert.equal(rects.length, 2);
+	assert.ok(rects[0].y + rects[0].height <= rects[1].y);
+	assert.equal(rects[0].width, 100);
+	assert.equal(rects[1].width, 80);
 });
 
 test("sameSelection compares page + text identity", () => {
