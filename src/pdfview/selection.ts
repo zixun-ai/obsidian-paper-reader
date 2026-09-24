@@ -90,6 +90,43 @@ export function filterMultiLineRects<T extends RectLike>(
 	return kept;
 }
 
+/** Clip adjacent selection lines at their midpoint so translucent fills never stack. */
+export function separateSelectionLines(rects: HighlightRect[]): HighlightRect[] {
+	const lines: { center: number; rects: HighlightRect[] }[] = [];
+	for (const rect of [...rects].sort((a, b) => a.y + a.height / 2 - b.y - b.height / 2)) {
+		const center = rect.y + rect.height / 2;
+		const line = lines.find((item) =>
+			Math.abs(item.center - center) < Math.min(item.rects[0].height, rect.height) / 2
+		);
+		if (line) line.rects.push(rect);
+		else lines.push({ center, rects: [rect] });
+	}
+	return lines.flatMap((line, index) => {
+		const top = index > 0 ? (lines[index - 1].center + line.center) / 2 : -Infinity;
+		const bottom = index + 1 < lines.length
+			? (line.center + lines[index + 1].center) / 2
+			: Infinity;
+		return line.rects.map((rect) => {
+			const y = Math.max(rect.y, top);
+			return { ...rect, y, height: Math.max(0, Math.min(rect.y + rect.height, bottom) - y) };
+		}).filter((rect) => rect.height > 0);
+	});
+}
+
+/** Draw the active browser selection with line-safe bands over the PDF page. */
+export function renderSelectionPreview(layer: HTMLElement, rects: HighlightRect[], scale: number): void {
+	layer.replaceChildren();
+	layer.parentElement?.classList.toggle("pr-selection-preview", rects.length > 0);
+	for (const rect of separateSelectionLines(rects)) {
+		const el = layer.createDiv({ cls: "pr-selection-rect" });
+		el.setCssStyles({ backgroundColor: "rgba(122, 96, 255, 0.35)" });
+		el.style.left = `${rect.x * scale}px`;
+		el.style.top = `${rect.y * scale}px`;
+		el.style.width = `${rect.width * scale}px`;
+		el.style.height = `${rect.height * scale}px`;
+	}
+}
+
 /** Whether two payloads describe the same selection (page + text identity). */
 export function sameSelection(
 	a: SelectionPayload | null,

@@ -2,7 +2,7 @@ import { ItemView, Menu, Notice, TFile, WorkspaceLeaf, setIcon } from "obsidian"
 import type { ViewStateResult } from "obsidian";
 import type PaperReaderPlugin from "../main";
 import { PdfRenderer, RenderedPage } from "./PdfRenderer";
-import { SelectionPayload, rectsOverlap, sameSelection, selectionToPayload } from "./selection";
+import { SelectionPayload, rectsOverlap, renderSelectionPreview, sameSelection, selectionToPayload } from "./selection";
 import { PopupStateCache } from "./popupCache";
 import {
 	LiveStroke,
@@ -1487,6 +1487,12 @@ export class PaperReaderView extends ItemView {
 			}
 		}
 		this.currentPayload = payload;
+		for (const page of this.pages) {
+			const rects = payload?.page === page.pageNumber ? payload.rects : [];
+			if (rects.length || page.wrapper.classList.contains("pr-selection-preview")) {
+				renderSelectionPreview(page.selectionLayer, rects, this.scale);
+			}
+		}
 		this.selectionActions?.setEnabled(!!payload);
 	}
 
@@ -1736,6 +1742,11 @@ export class PaperReaderView extends ItemView {
 
 	private clearSelection(): void {
 		this.currentPayload = null;
+		for (const page of this.pages) {
+			if (page.wrapper.classList.contains("pr-selection-preview")) {
+				renderSelectionPreview(page.selectionLayer, [], this.scale);
+			}
+		}
 		this.editingNoteId = null;
 		this.selectionActions?.setEnabled(false);
 		this.popup.hide();
