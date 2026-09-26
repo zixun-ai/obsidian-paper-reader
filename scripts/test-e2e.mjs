@@ -2,6 +2,7 @@ import { build } from 'esbuild';
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
+import synthetic from '../tests/fixtures/makePdf.cjs';
 
 const result = await build({ entryPoints: ['tests/e2e/harness.ts'], bundle: true, format: 'esm', write: false,
   alias: { obsidian: './tests/obsidian-stub.ts' },
@@ -13,6 +14,8 @@ const assets = new Map([
   ['/main.js', ['text/javascript', readFileSync('main.js')]],
   ['/styles.css', ['text/css', readFileSync('styles.css')]],
   ['/paper.pdf', ['application/pdf', readFileSync(process.argv[2] || 'tests/fixtures/paper.pdf')]],
+  ['/long.pdf', ['application/pdf', synthetic.makePdf(30)]],
+  ['/large.pdf', ['application/pdf', synthetic.makePdf(300)]],
 ]);
 // Deliberately serves no worker file: the published three-file install must suffice.
 const server = createServer((req, res) => {

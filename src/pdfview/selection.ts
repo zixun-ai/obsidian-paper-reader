@@ -58,7 +58,7 @@ export function buildSingleLineRect(
 		return null;
 	}
 	const width = endCaret.left - startCaret.left;
-	if (width < 2 || startCaret.height < 2) return null;
+	if (width <= 0 || startCaret.height < 2) return null;
 	return {
 		left: startCaret.left,
 		top: startCaret.top,
@@ -88,6 +88,38 @@ export function filterMultiLineRects<T extends RectLike>(
 		kept.push(r);
 	}
 	return kept;
+}
+
+/** Rejoin adjacent glyph cells into line bands, retaining gaps between columns. */
+export function mergeTextRects(raw: RectLike[]): RectLike[] {
+	const merged: RectLike[] = [];
+	for (const rect of [...raw].sort((a, b) => a.top - b.top || a.left - b.left)) {
+		const last = merged[merged.length - 1];
+		if (last && Math.abs(last.top - rect.top) < 1 && Math.abs(last.height - rect.height) < 1 &&
+			rect.left <= last.left + last.width + Math.max(1, rect.height / 2)) {
+			last.width = Math.max(last.left + last.width, rect.left + rect.width) - last.left;
+		} else merged.push({ left: rect.left, top: rect.top, width: rect.width, height: rect.height });
+	}
+	return merged;
+}
+
+/** Text boxes only: a DOM Range may also include duplicate transformed span boxes. */
+export function textRangeRects(range: Range, root: Node): DOMRect[] {
+	const rects: DOMRect[] = [];
+	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+	for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+		if (!node.textContent?.trim() || !range.intersectsNode(node)) continue;
+		const part = document.createRange();
+		part.selectNodeContents(node);
+		if (part.compareBoundaryPoints(Range.START_TO_START, range) < 0) {
+			part.setStart(range.startContainer, range.startOffset);
+		}
+		if (part.compareBoundaryPoints(Range.END_TO_END, range) > 0) {
+			part.setEnd(range.endContainer, range.endOffset);
+		}
+		if (!part.collapsed) rects.push(...Array.from(part.getClientRects()));
+	}
+	return rects;
 }
 
 /** Clip adjacent selection lines at their midpoint so translucent fills never stack. */
@@ -193,7 +225,7 @@ export function selectionToPayload(
 		const b = Math.min(top + height, pageRect.bottom);
 		const w = r - l;
 		const h = b - t;
-		if (w < 2 || h < 2) return null;
+		if (w <= 0 || h < 2) return null;
 		// Line-box height includes leading; trim ~10% top and bottom so
 		// highlight bands hug the glyphs and don't overlap adjacent lines.
 		const trim = h * 0.1;
@@ -229,23 +261,7 @@ export function selectionToPayload(
 	} else {
 		// A range spanning whole PDF spans includes both element and text boxes.
 		// Measure selected text nodes only, so each glyph run is counted once.
-		const raw: DOMRect[] = [];
-		const walker = document.createTreeWalker(
-			pageEl.querySelector(".textLayer") ?? pageEl,
-			NodeFilter.SHOW_TEXT
-		);
-		for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-			if (!node.textContent?.trim() || !range.intersectsNode(node)) continue;
-			const part = document.createRange();
-			part.selectNodeContents(node);
-			if (part.compareBoundaryPoints(Range.START_TO_START, range) < 0) {
-				part.setStart(range.startContainer, range.startOffset);
-			}
-			if (part.compareBoundaryPoints(Range.END_TO_END, range) > 0) {
-				part.setEnd(range.endContainer, range.endOffset);
-			}
-			if (!part.collapsed) raw.push(...Array.from(part.getClientRects()));
-		}
+		const raw = textRangeRects(range, pageEl.querySelector(".textLayer") ?? pageEl);
 		const bandTop =
 			Math.min(startCaret?.top ?? Infinity, endCaret?.top ?? Infinity) - 2;
 		const bandBottom = Math.max(
@@ -254,7 +270,7 @@ export function selectionToPayload(
 		) + 2;
 		const lineH = Math.max(startCaret?.height ?? 0, endCaret?.height ?? 0);
 		const kept = filterMultiLineRects(
-			raw,
+			mergeTextRects(raw),
 			bandTop,
 			bandBottom,
 			lineH

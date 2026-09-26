@@ -108,3 +108,39 @@ test("write failure returns false and reports via Notice", async () => {
 	assert.ok(Notice.messages.some((m) => m.includes("写入失败")));
 	assert.equal(adapter.files.has(ANN), false);
 });
+
+test("a second reader cannot silently overwrite a newer annotation snapshot", async () => {
+	const adapter = new MemAdapter();
+	const first = makeStore(adapter), second = makeStore(adapter);
+	const a = await first.load(PDF), b = await second.load(PDF);
+	a.annotations.push(sampleAnnotation()); b.annotations.push(sampleAnnotation());
+	assert.equal(await first.save(PDF, a), true);
+	assert.equal(await second.save(PDF, b), false);
+	assert.equal(JSON.parse(adapter.files.get(ANN)!).annotations[0].id, a.annotations[0].id);
+	assert.equal(b.annotations.length, 1, "conflicted draft stays in memory");
+	const fresh = await second.load(PDF);
+	fresh.annotations.push(b.annotations[0]);
+	assert.equal(await second.save(PDF, fresh), true);
+	assert.equal((await first.load(PDF)).annotations.length, 2);
+});
+
+test("concurrent saves are serialized and a rejected conflict does not poison the queue", async () => {
+	const adapter = new MemAdapter();
+	const first = makeStore(adapter), second = makeStore(adapter);
+	const a = await first.load(PDF), b = await second.load(PDF);
+	a.annotations.push(sampleAnnotation()); b.annotations.push(sampleAnnotation());
+	assert.deepEqual(await Promise.all([first.save(PDF, a), second.save(PDF, b)]), [true, false]);
+	const latest = await first.load(PDF);
+	latest.annotations.push(sampleAnnotation());
+	assert.equal(await first.save(PDF, latest), true);
+});
+
+test("a failed verification read can be retried without overwriting another writer", async () => {
+	const adapter = new MemAdapter(), store = makeStore(adapter);
+	const data = await store.load(PDF); data.annotations.push(sampleAnnotation());
+	const read = adapter.read;
+	let fail = true;
+	adapter.read = async path => { if (fail) { fail = false; throw new Error("temporary read failure"); } return read(path); };
+	assert.equal(await store.save(PDF, data), false);
+	assert.equal(await store.save(PDF, data), true);
+});

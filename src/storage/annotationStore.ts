@@ -1,5 +1,6 @@
 import { App, Notice } from "obsidian";
 import { annotationPathFor } from "./paths";
+import { withFileLock } from "./fileQueue";
 
 /** Rect in unscaled PDF page coordinates (scale = 1 viewport units). */
 export interface HighlightRect {
@@ -90,6 +91,7 @@ export function annotationFromPayload(
 export class AnnotationStore {
 	/** pdf paths whose annotation file is corrupt: writes are blocked */
 	private corrupted = new Set<string>();
+	private revision: { path: string; raw: string | null } | null = null;
 
 	constructor(
 		private app: App,
@@ -109,17 +111,22 @@ export class AnnotationStore {
 		const path = this.pathFor(pdfPath);
 		const adapter = this.app.vault.adapter;
 		try {
-			if (!(await adapter.exists(path))) {
-				return emptyAnnotationFile(pdfPath);
-			}
-			const raw = await adapter.read(path);
-			const parsed = JSON.parse(raw) as AnnotationFile;
-			if (!parsed || !Array.isArray(parsed.annotations)) {
-				throw new Error("invalid annotation file shape");
-			}
-			// a previously corrupt file parses fine now -> lift protection
-			this.corrupted.delete(pdfPath);
-			return parsed;
+			return await withFileLock(adapter, path, async () => {
+				if (!(await adapter.exists(path))) {
+					this.revision = { path, raw: null };
+					this.corrupted.delete(pdfPath);
+					return emptyAnnotationFile(pdfPath);
+				}
+				const raw = await adapter.read(path);
+				const parsed = JSON.parse(raw) as AnnotationFile;
+				if (!parsed || !Array.isArray(parsed.annotations)) {
+					throw new Error("invalid annotation file shape");
+				}
+				// a previously corrupt file parses fine now -> lift protection
+				this.corrupted.delete(pdfPath);
+				this.revision = { path, raw };
+				return parsed;
+			});
 		} catch (e) {
 			console.error("[paper-reader] failed to load annotations", e);
 			// back up the corrupt file once, then enter read-only protection:
@@ -149,13 +156,26 @@ export class AnnotationStore {
 		}
 		try {
 			const content = JSON.stringify(data, null, 2);
-			await adapter.write(path, content);
-			// write-verify: transient sync-dir failures must not pass silently
-			const readBack = await adapter.read(path);
-			if (readBack !== content) {
-				throw new Error("read-back verification failed");
-			}
-			return true;
+			return await withFileLock(adapter, path, async () => {
+				const current = await adapter.exists(path) ? await adapter.read(path) : null;
+				if (current === content) {
+					this.revision = { path, raw: content };
+					return true; // Safe retry if the write succeeded but its verification read failed.
+				}
+				const expected = this.revision?.path === path ? this.revision.raw : null;
+				if (current !== expected) {
+					new Notice("标注已被其他窗口或同步更新，本次未覆盖。请保留批注草稿，重新打开 PDF 后重试。");
+					return false;
+				}
+				await adapter.write(path, content);
+				// write-verify: transient sync-dir failures must not pass silently
+				const readBack = await adapter.read(path);
+				if (readBack !== content) {
+					throw new Error("read-back verification failed");
+				}
+				this.revision = { path, raw: content };
+				return true;
+			});
 		} catch (e) {
 			console.error("[paper-reader] failed to save annotations", e);
 			new Notice(`Paper Reader: 标注写入失败，内存中的标注未丢失，请重试 (${path})`);

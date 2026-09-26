@@ -180,6 +180,7 @@ test("restorePosition scrolls to saved page fraction and reports the page", asyn
 		pages: [{ pageNumber: 15, wrapper: { offsetTop: 100, offsetHeight: 800 } }],
 		scrollEl: { scrollTop: 0, clientHeight: 600 },
 		restoringPosition: false,
+		refreshPageWindow: async () => {},
 		updateCurrentPage: (p: number) => calls.push(p),
 	});
 	await view.restorePosition({
