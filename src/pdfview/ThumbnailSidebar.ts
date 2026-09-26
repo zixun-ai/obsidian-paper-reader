@@ -145,6 +145,7 @@ export class ThumbnailSidebar {
 				await this.renderThumb(page, gen);
 			} finally {
 				this.inflight--;
+				if (gen !== this.generation) void this.pump(this.generation);
 			}
 		}
 	}

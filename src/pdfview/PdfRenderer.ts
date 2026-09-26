@@ -1,4 +1,6 @@
-import { GlobalWorkerOptions, getDocument, TextLayer } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { GlobalWorkerOptions, getDocument, OPS, TextLayer } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { preciseTextContent, preserveWordSelection } from "./preciseText";
+import type { TextItem } from "pdfjs-dist/types/src/display/api";
 import type {
 	PDFDocumentLoadingTask,
 	PDFDocumentProxy,
@@ -47,6 +49,7 @@ export class PdfRenderer {
 	private pageTexts = new Map<number, string>();
 	/** cached page proxies shared by main rendering and thumbnails */
 	private pageCache = new Map<number, Promise<PDFPageProxy>>();
+	private generation = 0;
 
 	get numPages(): number {
 		return this.doc?.numPages ?? 0;
@@ -58,29 +61,39 @@ export class PdfRenderer {
 
 	/** Extract and cache a page's text, even if the page was never rendered. */
 	async getPageTextEnsured(pageNumber: number): Promise<string> {
+		const generation = this.generation;
 		const cached = this.pageTexts.get(pageNumber);
 		if (cached !== undefined) return cached;
 		const page = await this.getPage(pageNumber);
 		const tc = await page.getTextContent();
 		const joined = tc.items.map((i) => ("str" in i ? i.str : "")).join("");
-		this.pageTexts.set(pageNumber, joined);
+		if (generation === this.generation) this.pageTexts.set(pageNumber, joined);
 		return joined;
 	}
 
 	async load(data: ArrayBuffer): Promise<void> {
-		await this.destroy();
-		this.loadingTask = getDocument({ data });
-		this.doc = await this.loadingTask.promise;
+		const previous = this.loadingTask;
+		const generation = ++this.generation;
+		this.loadingTask = null;
+		this.doc = null;
+		this.pageTexts.clear(); this.pageCache.clear();
+		await previous?.destroy();
+		if (generation !== this.generation) return;
+		const task = getDocument({ data });
+		this.loadingTask = task;
+		const doc = await task.promise;
+		if (generation === this.generation) this.doc = doc;
+		else await task.destroy();
 	}
 
 	async destroy(): Promise<void> {
-		if (this.loadingTask) {
-			await this.loadingTask.destroy();
-			this.loadingTask = null;
-			this.doc = null;
-		}
+		this.generation++;
+		const task = this.loadingTask;
+		this.loadingTask = null;
+		this.doc = null;
 		this.pageTexts.clear();
 		this.pageCache.clear();
+		await task?.destroy();
 	}
 
 	private getPage(pageNumber: number): Promise<PDFPageProxy> {
@@ -161,62 +174,111 @@ export class PdfRenderer {
 	 * Render one page into a fresh wrapper element:
 	 * canvas (bottom) -> text layer (selection) -> highlight layer (top).
 	 */
-	async renderPage(pageNumber: number, scale: number): Promise<RenderedPage> {
-		if (!this.doc) throw new Error("no document loaded");
-		const page = await this.getPage(pageNumber);
-		const viewport = page.getViewport({ scale });
-		const baseViewport = page.getViewport({ scale: 1 });
-
+	async createPlaceholder(pageNumber: number, scale: number): Promise<RenderedPage> {
+		const dims = await this.getPageDims(pageNumber);
 		const wrapper = createDiv({ cls: "pr-page" });
 		wrapper.dataset.pageNumber = String(pageNumber);
-		wrapper.style.width = `${Math.floor(viewport.width)}px`;
-		wrapper.style.height = `${Math.floor(viewport.height)}px`;
+		wrapper.style.width = `${Math.floor(dims.width * scale)}px`;
+		wrapper.style.height = `${Math.floor(dims.height * scale)}px`;
 		// CSS vars expected by pdf.js v6 text layer styles
 		wrapper.style.setProperty("--total-scale-factor", String(scale));
 		wrapper.setCssProps({ "--scale-round-x": "1px", "--scale-round-y": "1px" });
+		return { pageNumber, wrapper, highlightLayer: createDiv(), selectionLayer: createDiv(), inkLayer: createSvg("svg"),
+			widthAtScale1: dims.width, heightAtScale1: dims.height };
+	}
 
-		const canvas = wrapper.createEl("canvas", { cls: "pr-canvas" });
-		const outputScale = Math.max(window.devicePixelRatio || 1, 1);
-		canvas.width = Math.floor(viewport.width * outputScale);
-		canvas.height = Math.floor(viewport.height * outputScale);
-		canvas.style.width = `${Math.floor(viewport.width)}px`;
-		canvas.style.height = `${Math.floor(viewport.height)}px`;
-		await page.render({
-			canvas,
-			viewport,
-			transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined,
-		}).promise;
+	releasePage(page: RenderedPage): void {
+		for (const canvas of Array.from(page.wrapper.querySelectorAll("canvas"))) canvas.width = canvas.height = 0;
+		page.wrapper.replaceChildren();
+		page.highlightLayer.replaceChildren(); page.selectionLayer.replaceChildren(); page.inkLayer.replaceChildren();
+		void this.pageCache.get(page.pageNumber)?.then(proxy => proxy.cleanup()).catch(() => {});
+	}
 
-		const textLayerEl = wrapper.createDiv({ cls: "textLayer" });
-		const textLayer = new TextLayer({
-			textContentSource: page.streamTextContent(),
-			container: textLayerEl,
-			viewport,
-		});
-		await textLayer.render();
-
-		// cache extracted text for selection fingerprinting
-		const textContent = await page.getTextContent();
-		const joined = textContent.items
-			.map((item) => ("str" in item ? item.str : ""))
-			.join("");
-		this.pageTexts.set(pageNumber, joined);
-
-		const highlightLayer = wrapper.createDiv({ cls: "pr-highlight-layer" });
-		const selectionLayer = wrapper.createDiv({ cls: "pr-selection-layer" });
-
-		const inkLayer = createSvg("svg");
-		inkLayer.classList.add("pr-ink-layer");
-		wrapper.appendChild(inkLayer);
-
-		return {
-			pageNumber,
-			wrapper,
-			highlightLayer,
-			selectionLayer,
-			inkLayer,
-			widthAtScale1: baseViewport.width,
-			heightAtScale1: baseViewport.height,
+	async renderPage(pageNumber: number, scale: number, signal?: AbortSignal): Promise<RenderedPage> {
+		const generation = this.generation;
+		const page = await this.getPage(pageNumber);
+		const shell = await this.createPlaceholder(pageNumber, scale);
+		const { wrapper } = shell;
+		const viewport = page.getViewport({ scale });
+		const check = () => {
+			if (signal?.aborted || generation !== this.generation) throw new DOMException("Page render cancelled", "AbortError");
 		};
+		check();
+		let renderTask: ReturnType<PDFPageProxy["render"]> | undefined;
+		let textLayer: TextLayer | undefined;
+		const cancel = () => { renderTask?.cancel(); textLayer?.cancel(); };
+		signal?.addEventListener("abort", cancel, { once: true });
+		try {
+
+			const canvas = wrapper.createEl("canvas", { cls: "pr-canvas" });
+			// Bound a single zoomed page to 8 MP; Unicode selection remains full resolution.
+			const outputScale = Math.min(Math.max(window.devicePixelRatio || 1, 1), Math.sqrt(8_000_000 / (viewport.width * viewport.height)));
+			canvas.width = Math.floor(viewport.width * outputScale);
+			canvas.height = Math.floor(viewport.height * outputScale);
+			canvas.style.width = `${Math.floor(viewport.width)}px`;
+			canvas.style.height = `${Math.floor(viewport.height)}px`;
+			renderTask = page.render({
+				canvas,
+				viewport,
+				transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined,
+			});
+			await renderTask.promise;
+			check();
+
+			const textLayerEl = wrapper.createDiv({ cls: "textLayer" });
+			const [textContent, operatorList] = await Promise.all([page.getTextContent(), page.getOperatorList()]);
+			check();
+			const precise = preciseTextContent(textContent, operatorList, OPS);
+			textLayer = new TextLayer({
+				textContentSource: precise.content,
+				container: textLayerEl,
+				viewport,
+			});
+			await textLayer.render();
+			check();
+			// PDF.js fits whole runs but normally leaves one-character spans unscaled.
+			// Fit each verified glyph cell too, so native mouse hit testing uses PDF widths.
+			const measure = canvas.getContext("2d")!;
+			measure.save();
+			const groups = new Map<TextItem, HTMLElement[]>();
+			let divIndex = 0;
+			for (const item of precise.content.items) {
+				if (!("str" in item)) continue;
+				const div = textLayer.textDivs[divIndex++];
+				if (!precise.glyphItems.has(item) || !div) continue;
+				const original = precise.glyphItems.get(item)!;
+				const group = groups.get(original) ?? [];
+				group.push(div); groups.set(original, group);
+				const fontSize = Math.hypot(item.transform[2], item.transform[3]) * scale * outputScale;
+				measure.font = `${fontSize}px ${div.style.fontFamily}`;
+				const width = measure.measureText(item.str).width;
+				if (width > 0) div.style.setProperty("--scale-x", String(item.width * scale * outputScale / width));
+			}
+			measure.restore();
+			preserveWordSelection(textLayerEl, [...groups.values()]);
+
+			// cache extracted text for selection fingerprinting
+			const joined = textContent.items
+				.map((item) => ("str" in item ? item.str : ""))
+				.join("");
+			this.pageTexts.set(pageNumber, joined);
+
+			const highlightLayer = wrapper.createDiv({ cls: "pr-highlight-layer" });
+			const selectionLayer = wrapper.createDiv({ cls: "pr-selection-layer" });
+
+			const inkLayer = createSvg("svg");
+			inkLayer.classList.add("pr-ink-layer");
+			wrapper.appendChild(inkLayer);
+
+			return {
+				...shell,
+				highlightLayer,
+				selectionLayer,
+				inkLayer,
+			};
+		} catch (error) {
+			this.releasePage(shell);
+			throw error;
+		} finally { signal?.removeEventListener("abort", cancel); }
 	}
 }

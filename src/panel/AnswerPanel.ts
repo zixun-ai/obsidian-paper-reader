@@ -46,6 +46,12 @@ export class AnswerPanel {
 	private lastAnswer = "";
 	private streaming = false;
 	private generation = 0;
+	private renderedComponents = new Map<HTMLElement, Component>();
+
+	private releaseAnswers(): void {
+		for (const child of this.renderedComponents?.values() ?? []) this.component.removeChild(child);
+		this.renderedComponents?.clear();
+	}
 
 	constructor(
 		private app: App,
@@ -118,6 +124,8 @@ export class AnswerPanel {
 
 	close(): void {
 		this.generation++;
+		this.releaseAnswers();
+		this.bodyEl.empty();
 		this.streaming = false;
 		this.el.addClass("pr-hidden");
 		this.history = [];
@@ -126,6 +134,7 @@ export class AnswerPanel {
 
 	private start(mode: PanelMode, payload: SelectionPayload, contextText: string): void {
 		this.generation++;
+		this.releaseAnswers();
 		this.streaming = false;
 		this.mode = mode;
 		this.payload = payload;
@@ -183,6 +192,7 @@ export class AnswerPanel {
 			}
 			if (renderedComponent) this.component.removeChild(renderedComponent);
 			renderedComponent = renderComponent;
+			(this.renderedComponents ??= new Map()).set(live, renderComponent);
 			live.replaceChildren(target);
 			renderedAnswer = snapshot;
 			lastRenderAt = Date.now();
@@ -223,13 +233,20 @@ export class AnswerPanel {
 		if (messages[messages.length - 1].role === "assistant") {
 			messages = messages.slice(0, -1);
 			const bubbles = this.bodyEl.querySelectorAll(".pr-msg-assistant");
-			bubbles[bubbles.length - 1]?.remove();
+			const last = bubbles[bubbles.length - 1] as HTMLElement | undefined;
+			if (last) {
+				const child = this.renderedComponents?.get(last);
+				if (child) this.component.removeChild(child);
+				this.renderedComponents?.delete(last);
+				last.remove();
+			}
 		}
 		void this.run(messages);
 	}
 
 	private clearConversation(): void {
 		if (this.streaming) return;
+		this.releaseAnswers();
 		this.bodyEl.querySelectorAll(".pr-msg").forEach((el) => el.remove());
 		if (this.mode === "ask") {
 			this.history = this.payload

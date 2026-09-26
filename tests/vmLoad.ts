@@ -28,6 +28,7 @@ export function loadTs(path: string, imports: Record<string, unknown> = {}): any
 		document: { body: elementStub() },
 		window: { innerWidth: 1000, innerHeight: 1000, setTimeout, clearTimeout },
 		DOMRect: class {},
+		createDiv: elementStub,
 		crypto,
 		structuredClone,
 	});
@@ -52,6 +53,7 @@ export function elementStub(): any {
 		empty() {},
 		focus() {},
 		appendChild() {},
+		replaceChildren() {},
 		remove() {},
 		getBoundingClientRect: () => ({ width: 200, height: 100 }),
 	};

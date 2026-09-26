@@ -104,6 +104,11 @@ import { AnnotationHistory } from "../../src/history/AnnotationHistory";
 import { AnnotationList, inkPreviewSvg } from "../../src/pdfview/AnnotationList";
 import { findHits } from "../../src/search/searchText";
 import { SelectionPopup } from "../../src/toolbar/SelectionPopup";
+import { vaultFor } from "../vaultStub";
+import { PaperReaderView } from "../../src/pdfview/PaperReaderView";
+import { DEFAULT_SETTINGS } from "../../src/settings";
+import { TFile } from "obsidian";
+const fixtureFetch = window.fetch.bind(window);
 
 class MemAdapter {
 	files = new Map<string, string>();
@@ -124,9 +129,38 @@ const SCALE = 1.5;
 const PDF_PATH = "05-论文/paper.pdf";
 
 class Harness {
+	reader: any = null;
+	async openReader(url = "/long.pdf"): Promise<unknown> {
+		await this.closeReader();
+		const adapter = new MemAdapter(), vault = vaultFor(adapter);
+		const app = { vault: { ...vault, readBinary: async () => (await fixtureFetch(url)).arrayBuffer() },
+			workspace: { requestSaveLayout() {}, getActiveViewOfType: () => this.reader } };
+		const plugin = { app, settings: { ...DEFAULT_SETTINGS, readingPositions: {} }, async saveSettings() {} };
+		const view: any = new PaperReaderView({ app } as never, plugin as never);
+		this.reader = view;
+		view.contentEl.style.cssText = "position:fixed;inset:0;background:white;z-index:1000";
+		document.body.appendChild(view.contentEl);
+		await view.onOpen();
+		view.sidebarCollapsed = true; view.sidebar.setCollapsed(true);
+		await view.openFile(Object.assign(new TFile(), { path: "synthetic.pdf", basename: "synthetic", extension: "pdf" }));
+		return this.readerStats();
+	}
+	readerStats(): unknown {
+		const v = this.reader;
+		const canvases = Array.from(v.pagesEl.querySelectorAll("canvas")) as HTMLCanvasElement[];
+		return { pages: v.pages.length, mounted: [...v.mountedPages], current: v.currentPage,
+			spans: v.pagesEl.querySelectorAll(".textLayer span").length,
+			canvasBytes: canvases.reduce((sum, c) => sum + c.width * c.height * 4, 0),
+			maxPixels: Math.max(0, ...canvases.map(c => c.width * c.height)), failures: [...v.failedPages] };
+	}
+	async readerNavigate(page: number): Promise<unknown> { await this.reader.scrollToPage(page); return this.readerStats(); }
+	async closeReader(): Promise<void> {
+		if (!this.reader) return;
+		await this.reader.onClose(); this.reader.unload(); this.reader.contentEl.remove(); this.reader = null;
+	}
 	useWorker(url: string): void { configurePdfWorker(url); }
 	adapter = new MemAdapter();
-	app = { vault: { adapter: this.adapter } };
+	app = { vault: vaultFor(this.adapter) };
 	renderer = new PdfRenderer();
 	store = new AnnotationStore(this.app as never, () => ".annotations.json");
 	data: AnnotationFile = { version: 1, file: "paper.pdf", annotations: [] };
@@ -150,16 +184,25 @@ class Harness {
 		this.highlightLayer = rendered.highlightLayer;
 	}
 
-	selectText(needle: string, from = 0, to = 10): SelectionPayload {
-		const spans = Array.from(
-			this.pageEl!.querySelectorAll(".textLayer span")
-		) as HTMLElement[];
-		const span = spans.find((s) => (s.textContent || "").includes(needle));
-		if (!span || !span.firstChild) throw new Error("span not found: " + needle);
-		const tn = span.firstChild;
+	private textRange(needle: string, from = 0, to = Infinity): Range {
+		const lines: Text[][] = [[]];
+		for (const el of Array.from(this.pageEl!.querySelector(".textLayer")!.children)) {
+			if (el.tagName === "BR") lines.push([]);
+			else if (el.firstChild?.nodeType === Node.TEXT_NODE) lines[lines.length - 1].push(el.firstChild as Text);
+		}
+		const nodes = lines.find(line => line.map(n => n.data).join("").includes(needle));
+		if (!nodes?.length) throw new Error("line not found: " + needle);
+		const point = (offset: number): [Text, number] => {
+			for (const node of nodes) { if (offset <= node.length) return [node, offset]; offset -= node.length; }
+			return [nodes[nodes.length - 1], nodes[nodes.length - 1].length];
+		};
 		const range = document.createRange();
-		range.setStart(tn, from);
-		range.setEnd(tn, Math.min(to, tn.textContent!.length));
+		range.setStart(...point(from)); range.setEnd(...point(to));
+		return range;
+	}
+
+	selectText(needle: string, from = 0, to = 10): SelectionPayload {
+		const range = this.textRange(needle, from, to);
 		const sel = window.getSelection()!;
 		sel.removeAllRanges();
 		sel.addRange(range);
@@ -169,11 +212,9 @@ class Harness {
 	}
 
 	previewTitleSelection(): { bands: number; overlaps: boolean; nativeHidden: boolean; fillVisible: boolean; text: string } {
-		const spans = Array.from(this.pageEl!.querySelectorAll(".textLayer span"));
-		const first = spans.find(s => s.textContent?.startsWith("LandslideAgent"))!.firstChild!;
-		const last = spans.find(s => s.textContent?.startsWith("Autonomous Landslide"))!.firstChild!;
+		const first = this.textRange("LandslideAgent"), last = this.textRange("Autonomous Landslide");
 		const selection = window.getSelection()!;
-		selection.setBaseAndExtent(first, 0, last, last.textContent!.length);
+		selection.setBaseAndExtent(first.startContainer, first.startOffset, last.endContainer, last.endOffset);
 		const payload = selectionToPayload(selection, SCALE, p => this.renderer.getPageText(p))!;
 		const layer = this.pageEl!.querySelector<HTMLElement>(".pr-selection-layer")!;
 		renderSelectionPreview(layer, payload.rects, SCALE);
@@ -181,7 +222,7 @@ class Harness {
 		return {
 			bands: bands.length,
 			overlaps: bands.some((box, i) => i > 0 && bands[i - 1].bottom > box.top + 0.1),
-			nativeHidden: getComputedStyle(first.parentElement as Element, "::selection").backgroundColor === "rgba(0, 0, 0, 0)",
+			nativeHidden: getComputedStyle(first.startContainer.parentElement as Element, "::selection").backgroundColor === "rgba(0, 0, 0, 0)",
 			fillVisible: getComputedStyle(layer.firstElementChild!).backgroundColor !== "rgba(0, 0, 0, 0)",
 			text: selection.toString(),
 		};
@@ -198,12 +239,10 @@ class Harness {
 		document.body.appendChild(page.wrapper);
 		this.pageEl = page.wrapper;
 		this.highlightLayer = page.highlightLayer;
-		const spans = Array.from(page.wrapper.querySelectorAll(".textLayer span"));
-		const first = spans.find(s => s.textContent?.startsWith("LandslideAgent"))!.firstChild!;
-		const last = spans.find(s => s.textContent?.startsWith("Autonomous Landslide"))!.firstChild!;
+		const first = this.textRange("LandslideAgent"), last = this.textRange("Autonomous Landslide");
 		const selection = window.getSelection()!;
-		if (reverse) selection.setBaseAndExtent(last, last.textContent!.length, first, 0);
-		else selection.setBaseAndExtent(first, 0, last, last.textContent!.length);
+		if (reverse) selection.setBaseAndExtent(last.endContainer, last.endOffset, first.startContainer, first.startOffset);
+		else selection.setBaseAndExtent(first.startContainer, first.startOffset, last.endContainer, last.endOffset);
 		const payload = selectionToPayload(selection, scale, p => this.renderer.getPageText(p))!;
 		const annotation = annotationFromPayload(payload, { type: "highlight", color: "red", style: "underline" });
 		this.clickedHighlightId = null;

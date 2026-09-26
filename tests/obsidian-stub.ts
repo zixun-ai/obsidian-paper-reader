@@ -37,6 +37,25 @@ export class ConfirmationModal {
 	}
 }
 export class TFile {}
+export class Component {
+	children: Component[] = [];
+	private cleanups: (() => void)[] = [];
+	addChild<T extends Component>(child: T): T { this.children.push(child); return child; }
+	removeChild(child: Component): void { this.children = this.children.filter(c => c !== child); child.unload(); }
+	register(cleanup: () => void): void { this.cleanups.push(cleanup); }
+	registerDomEvent(el: EventTarget, type: string, callback: EventListener): void {
+		el.addEventListener(type, callback); this.register(() => el.removeEventListener(type, callback));
+	}
+	unload(): void { for (const child of this.children) child.unload(); this.children = []; for (const cleanup of this.cleanups) cleanup(); this.cleanups = []; }
+}
+export class ItemView extends Component {
+	app: any;
+	contentEl = document.createElement("div");
+	constructor(public leaf: any) { super(); this.app = leaf.app; }
+	async setState(): Promise<void> {}
+}
+export class Menu {}
+export const MarkdownRenderer = { async render(_app: unknown, text: string, target: HTMLElement): Promise<void> { target.textContent = text; } };
 export class PluginSettingTab {
 	containerEl = {} as HTMLElement;
 	constructor(..._args: unknown[]) {}

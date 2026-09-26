@@ -6,7 +6,22 @@ import {
 	separateSelectionLines,
 	sameSelection,
 	RectLike,
+	mergeTextRects,
 } from "../src/pdfview/selection";
+
+test("glyph cells merge across word spaces but not across columns or lines", () => {
+	assert.deepEqual(mergeTextRects([
+		{ left: 0, top: 0, width: 5, height: 20 },
+		{ left: 5, top: 0, width: 2, height: 20 },
+		{ left: 12, top: 0, width: 8, height: 20 },
+		{ left: 80, top: 0, width: 10, height: 20 },
+		{ left: 0, top: 24, width: 10, height: 20 },
+	]), [
+		{ left: 0, top: 0, width: 20, height: 20 },
+		{ left: 80, top: 0, width: 10, height: 20 },
+		{ left: 0, top: 24, width: 10, height: 20 },
+	]);
+});
 
 test("single-line rect from caret positions", () => {
 	const r = buildSingleLineRect(
@@ -17,6 +32,10 @@ test("single-line rect from caret positions", () => {
 });
 
 test("single-line rect rejects cross-line carets and zero width", () => {
+	assert.equal(buildSingleLineRect(
+		{ left: 100, top: 200, width: 0, height: 12 },
+		{ left: 101.5, top: 200, width: 0, height: 12 }
+	)?.width, 1.5, "narrow letters remain selectable when zoomed out");
 	assert.equal(
 		buildSingleLineRect(
 			{ left: 100, top: 200, width: 0, height: 30 },

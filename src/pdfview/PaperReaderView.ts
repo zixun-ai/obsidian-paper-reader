@@ -2,7 +2,7 @@ import { ItemView, Menu, Notice, TFile, WorkspaceLeaf, setIcon } from "obsidian"
 import type { ViewStateResult } from "obsidian";
 import type PaperReaderPlugin from "../main";
 import { PdfRenderer, RenderedPage } from "./PdfRenderer";
-import { SelectionPayload, rectsOverlap, renderSelectionPreview, sameSelection, selectionToPayload } from "./selection";
+import { SelectionPayload, mergeTextRects, textRangeRects, rectsOverlap, renderSelectionPreview, sameSelection, selectionToPayload } from "./selection";
 import { PopupStateCache } from "./popupCache";
 import {
 	LiveStroke,
@@ -30,7 +30,7 @@ import { AnswerPanel, PanelMode } from "../panel/AnswerPanel";
 import { LlmClient, LlmError } from "../llm/client";
 import { buildTranslateMessages } from "../llm/prompts";
 import { OutlineNode } from "../outline/OutlineTree";
-import { appendToNotes, NotesEntry } from "../storage/notesWriter";
+import { appendManyToNotes, appendToNotes, NotesEntry } from "../storage/notesWriter";
 import { ReadingPosition } from "../settings";
 import { SearchHit, findHits } from "../search/searchText";
 import { inkPreviewSvg } from "./AnnotationList";
@@ -85,6 +85,16 @@ export class PaperReaderView extends ItemView {
 	private currentPage = 1;
 	private baseDims: { width: number; height: number } | null = null;
 	private renderToken = 0;
+	private documentToken = 0;
+	private aiPanelToken = 0;
+	private closed = false;
+	private mountedPages = new Set<number>();
+	private wantedPages = new Set<number>();
+	private failedPages = new Set<number>();
+	private pageWindowTask: Promise<void> | null = null;
+	private pageRender: { page: number; abort: AbortController } | null = null;
+	private pageWindowTimer: number | null = null;
+	private selectionTimer: number | null = null;
 
 	private popup: SelectionPopup;
 	private popupCache = new PopupStateCache();
@@ -183,6 +193,7 @@ export class PaperReaderView extends ItemView {
 	}
 
 	async onOpen(): Promise<void> {
+		this.closed = false;
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass("paper-reader-view");
@@ -222,6 +233,10 @@ export class PaperReaderView extends ItemView {
 			this.hlMenu.hide();
 			this.updateCurrentPageFromScroll();
 			this.schedulePositionSave();
+			if (this.pageWindowTimer === null) this.pageWindowTimer = window.setTimeout(() => {
+				this.pageWindowTimer = null;
+				void this.refreshPageWindow();
+			}, 30);
 		});
 		this.registerDomEvent(this.scrollEl, "mouseup", () => this.onMouseUp());
 		// pen drawing (delegated; only active in pen mode)
@@ -238,10 +253,10 @@ export class PaperReaderView extends ItemView {
 			this.onPenPointerEnd(e, false)
 		);
 		// track selection lifecycle to enable/disable the header action group
-		let selTimer: number | null = null;
 		this.registerDomEvent(document, "selectionchange", () => {
-			if (selTimer !== null) window.clearTimeout(selTimer);
-			selTimer = window.setTimeout(() => this.refreshSelectionState(), 100);
+			if (this.closed) return;
+			if (this.selectionTimer !== null) window.clearTimeout(this.selectionTimer);
+			this.selectionTimer = window.setTimeout(() => this.refreshSelectionState(), 100);
 		});
 		this.registerDomEvent(document, "keydown", (e: KeyboardEvent) => {
 			if (e.key === "Escape") {
@@ -296,17 +311,30 @@ export class PaperReaderView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
-		await this.savePositionNow();
+		this.closed = true;
+		this.panel?.close();
+		this.documentToken++;
+		this.renderToken++;
+		this.pageRender?.abort.abort();
+		this.wantedPages.clear();
+		this.closeSearch();
+		for (const timer of [this.positionTimer, this.pageWindowTimer, this.selectionTimer]) {
+			if (timer !== null) window.clearTimeout(timer);
+		}
+		this.positionTimer = this.pageWindowTimer = this.selectionTimer = null;
+		await this.savePositionNow().catch(error => console.error("[paper-reader] position save failed", error));
 		if (this.liveStroke) {
 			this.liveStroke.discard();
 			this.liveStroke = null;
 		}
 		this.cancelRectangleEdit();
-		this.panel?.close();
 		this.file = null;
 		this.popup.hide();
 		this.hlMenu.hide();
 		this.sidebar.destroy();
+		for (const page of this.pages) this.renderer.releasePage(page);
+		this.pages = [];
+		this.mountedPages.clear();
 		await this.renderer.destroy();
 	}
 
@@ -356,6 +384,7 @@ export class PaperReaderView extends ItemView {
 	}
 
 	async openFile(file: TFile, opts?: { page?: number }): Promise<void> {
+		const token = ++this.documentToken;
 		this.panel?.close();
 		this.file = file;
 		this.currentPayload = null;
@@ -371,22 +400,34 @@ export class PaperReaderView extends ItemView {
 		this.showEmpty("加载中…");
 		try {
 			const buf = await this.app.vault.readBinary(file);
+			if (token !== this.documentToken || this.closed) return;
 			await this.renderer.load(buf);
-			this.data = await this.store.load(file.path);
-			this.baseDims = await this.renderer.getPageDims(1);
-			this.outline = await this.renderer.getOutline().catch(() => null);
+			if (token !== this.documentToken || this.closed) return;
+			const store = new AnnotationStore(this.app, () => this.plugin.settings.annotationSuffix);
+			const data = await store.load(file.path);
+			if (token !== this.documentToken || this.closed) return;
+			this.store = store; this.data = data;
+			const dims = await this.renderer.getPageDims(1);
+			const outline = await this.renderer.getOutline().catch(() => null);
+			if (token !== this.documentToken || this.closed) return;
+			this.baseDims = dims; this.outline = outline;
 		} catch (e) {
+			if (token !== this.documentToken || this.closed) return;
 			console.error("[paper-reader] failed to load pdf", e);
 			this.showEmpty(`PDF 加载失败: ${file.path}`);
 			return;
 		}
+		if (token !== this.documentToken || this.closed) return;
 		this.zoomMode = "fit-width";
 		// restore last reading position unless an explicit page was requested
 		const explicitPage = opts?.page;
 		const saved = explicitPage ? undefined : this.savedPositionFor(file.path);
 		if (saved) this.prepareSavedLayout(saved);
+		if (explicitPage) this.currentPage = Math.min(Math.max(1, explicitPage), this.renderer.numPages);
 		this.buildSidebarContent();
+		this.buildHeader();
 		await this.renderAll();
+		if (token !== this.documentToken || this.closed) return;
 		this.buildHeader();
 		this.applyInvertColors();
 		if (explicitPage) {
@@ -470,6 +511,7 @@ export class PaperReaderView extends ItemView {
 				this.scrollEl.clientHeight / 2;
 			this.scrollEl.scrollTop = Math.max(0, target);
 			this.updateCurrentPage(page);
+			await this.refreshPageWindow();
 		} finally {
 			this.restoringPosition = false;
 		}
@@ -521,6 +563,8 @@ export class PaperReaderView extends ItemView {
 	}
 
 	private closeSearch(): void {
+		if (this.searchDebounce !== null) window.clearTimeout(this.searchDebounce);
+		this.searchDebounce = null;
 		this.searchBarEl?.addClass("pr-hidden");
 		this.searchHits = [];
 		this.currentHit = -1;
@@ -597,7 +641,7 @@ export class PaperReaderView extends ItemView {
 			const range = this.domRangeForText(page.wrapper, hit.index, hit.length);
 			if (!range) continue;
 			const pageRect = page.wrapper.getBoundingClientRect();
-			for (const r of Array.from(range.getClientRects())) {
+			for (const r of mergeTextRects(textRangeRects(range, page.wrapper))) {
 				if (r.width < 2 || r.height < 2) continue;
 				const el = layer.createDiv({
 					cls: hit === current ? "pr-search-hit pr-search-current" : "pr-search-hit",
@@ -640,6 +684,10 @@ export class PaperReaderView extends ItemView {
 	}
 
 	private showEmpty(message: string): void {
+		this.renderToken++;
+		this.pageRender?.abort.abort();
+		this.wantedPages.clear(); this.mountedPages.clear();
+		for (const page of this.pages) this.renderer.releasePage(page);
 		this.headerEl.empty();
 		this.pagesEl.empty();
 		this.pages = [];
@@ -702,11 +750,9 @@ export class PaperReaderView extends ItemView {
 				onClearHighlight: () => void this.clearHighlightsInSelection(),
 				onCopy: () => void this.copySelection(),
 				onNote: () => this.openNotePopup(),
-				onTranslate: () =>
-					this.withPayload((p) => this.panel.openTranslate(p, this.contextTextFor(p))),
-				onExplain: () =>
-					this.withPayload((p) => this.panel.openExplain(p, this.contextTextFor(p))),
-				onAsk: () => this.withPayload((p) => this.panel.openAsk(p, this.contextTextFor(p))),
+				onTranslate: () => this.withPayload(p => void this.openAiPanel("translate", p)),
+				onExplain: () => this.withPayload(p => void this.openAiPanel("explain", p)),
+				onAsk: () => this.withPayload(p => void this.openAiPanel("ask", p)),
 			},
 			() => this.plugin.settings.highlightColors
 		);
@@ -947,13 +993,17 @@ export class PaperReaderView extends ItemView {
 	// ---- rendering ----
 
 	private async renderAll(): Promise<void> {
+		if (this.closed) return;
 		const token = ++this.renderToken;
+		this.pageRender?.abort.abort();
+		this.wantedPages.clear(); this.mountedPages.clear(); this.failedPages.clear();
 		this.scale = this.computeScale();
 		const scrollRatio =
 			this.scrollEl.scrollHeight > 0
 				? this.scrollEl.scrollTop / this.scrollEl.scrollHeight
 				: 0;
 
+		for (const page of this.pages) this.renderer.releasePage(page);
 		this.pagesEl.empty();
 		this.pages = [];
 		const n = this.renderer.numPages;
@@ -997,8 +1047,12 @@ export class PaperReaderView extends ItemView {
 			this.updateCurrentPage(this.currentPage);
 		} else {
 			this.scrollEl.scrollTop = scrollRatio * this.scrollEl.scrollHeight;
+			if (scrollRatio === 0 && this.currentPage > 1) {
+				this.scrollEl.scrollTop = this.pages.find(p => p.pageNumber === this.currentPage)?.wrapper.offsetTop ?? 0;
+			}
 			this.updateCurrentPageFromScroll();
 		}
+		await this.refreshPageWindow();
 	}
 
 	private async renderOnePage(
@@ -1007,16 +1061,70 @@ export class PaperReaderView extends ItemView {
 		parent: HTMLElement
 	): Promise<boolean> {
 		if (token !== this.renderToken) return false;
-		const rendered = await this.renderer.renderPage(pageNumber, this.scale);
+		let rendered: RenderedPage;
+		try { rendered = await this.renderer.createPlaceholder(pageNumber, this.scale); }
+		catch (error) { if (token !== this.renderToken || this.closed) return false; throw error; }
 		if (token !== this.renderToken) return false;
 		this.pages.push(rendered);
 		parent.appendChild(rendered.wrapper);
-		this.redrawHighlights(rendered);
-		this.redrawInk(rendered);
 		return true;
 	}
 
+	/** Keep lightweight page geometry; raster/text resources belong only to the reading window. */
+	private async refreshPageWindow(): Promise<void> {
+		if (this.closed || !this.pages.length) return;
+		const bounds = this.scrollEl.getBoundingClientRect();
+		const margin = this.scrollEl.clientHeight;
+		const center = (bounds.top + bounds.bottom) / 2;
+		const candidates = this.pages.map(page => ({ page, rect: page.wrapper.getBoundingClientRect() }))
+			.filter(({ rect }) => rect.bottom >= bounds.top - margin && rect.top <= bounds.bottom + margin)
+			.sort((a, b) => Math.abs((a.rect.top + a.rect.bottom) / 2 - center) - Math.abs((b.rect.top + b.rect.bottom) / 2 - center));
+		// ponytail: eight nearby pages plus active selection/drawing; tune only with viewport evidence.
+		this.wantedPages = new Set(candidates.slice(0, 8).map(({ page }) => page.pageNumber));
+		const selection = this.scrollEl.ownerDocument.getSelection();
+		for (const page of this.pages) {
+			if ((selection?.anchorNode && page.wrapper.contains(selection.anchorNode)) ||
+				(selection?.focusNode && page.wrapper.contains(selection.focusNode)) ||
+				(this.liveStroke && page.pageNumber === this.liveStrokePage) || page.pageNumber === this.rectangleEdit?.page) {
+				this.wantedPages.add(page.pageNumber);
+			}
+			if (this.mountedPages.has(page.pageNumber) && !this.wantedPages.has(page.pageNumber)) {
+				this.renderer.releasePage(page); this.mountedPages.delete(page.pageNumber);
+			}
+		}
+		if (this.pageRender && !this.wantedPages.has(this.pageRender.page)) this.pageRender.abort.abort();
+		if (!this.pageWindowTask) {
+			this.pageWindowTask = Promise.resolve().then(async () => {
+				while (!this.closed) {
+					const slot = this.pages.find(p => this.wantedPages.has(p.pageNumber) && !this.mountedPages.has(p.pageNumber) && !this.failedPages.has(p.pageNumber));
+					if (!slot) break;
+					const token = this.renderToken, abort = new AbortController();
+					this.pageRender = { page: slot.pageNumber, abort };
+					try {
+						const rendered = await this.renderer.renderPage(slot.pageNumber, this.scale, abort.signal);
+						if (token !== this.renderToken || abort.signal.aborted || this.closed) { this.renderer.releasePage(rendered); continue; }
+						const wrapper = slot.wrapper;
+						wrapper.replaceChildren(...Array.from(rendered.wrapper.childNodes));
+						Object.assign(slot, rendered, { wrapper });
+						this.mountedPages.add(slot.pageNumber);
+						this.redrawHighlights(slot); this.redrawInk(slot);
+						const hit = this.searchHits[this.currentHit];
+						if (hit?.page === slot.pageNumber) this.applySearchHighlights(hit);
+					} catch (error) {
+						if (!abort.signal.aborted && token === this.renderToken && !this.closed) {
+							this.failedPages.add(slot.pageNumber);
+							new Notice(`第 ${slot.pageNumber} 页渲染失败，请重新打开 PDF`);
+							console.error("[paper-reader] page render failed", error);
+						}
+					} finally { this.pageRender = null; }
+				}
+			}).finally(() => { this.pageWindowTask = null; });
+		}
+		await this.pageWindowTask;
+	}
+
 	private redrawHighlights(page: RenderedPage): void {
+		if (!this.mountedPages.has(page.pageNumber)) return;
 		const annotations = this.data.annotations.filter(
 			(a) =>
 				(a.type === "highlight" || a.type === "note") &&
@@ -1083,6 +1191,7 @@ export class PaperReaderView extends ItemView {
 		if (!page) return;
 		this.scrollEl.scrollTop = page.wrapper.offsetTop - 8;
 		this.updateCurrentPage(target);
+		await this.refreshPageWindow();
 	}
 
 	private isEditableTarget(t: EventTarget | null): boolean {
@@ -1301,6 +1410,7 @@ export class PaperReaderView extends ItemView {
 	}
 
 	private redrawInk(page: RenderedPage): void {
+		if (!this.mountedPages.has(page.pageNumber)) return;
 		renderInkStrokes(
 			page.inkLayer,
 			this.data.annotations.filter((a) => a.type === "ink" && a.page === page.pageNumber),
@@ -1440,9 +1550,8 @@ export class PaperReaderView extends ItemView {
 			new Notice("暂无可导出的标注");
 			return;
 		}
-		for (const ann of this.data.annotations) {
-			await this.exportAnnotation(ann);
-		}
+		await appendManyToNotes(this.app, this.file.path, this.plugin.settings.notesSuffix,
+			this.data.annotations.map(ann => this.notesEntryFor(ann)));
 	}
 
 	private notesEntryFor(ann: Annotation): NotesEntry {
@@ -1667,13 +1776,14 @@ export class PaperReaderView extends ItemView {
 		}
 		const file = this.file;
 		const data = this.data;
+		const document = this.documentToken;
 		const messages = buildTranslateMessages(payload.text, s.translateTargetLang);
 		let out = "";
 		for await (const chunk of this.llm.streamChat(messages)) {
 			out += chunk;
 			onChunk(out);
 		}
-		if (this.file !== file || this.data !== data) return out;
+		if (this.closed || document !== this.documentToken || this.file !== file || this.data !== data) return out;
 		// record as a translation annotation, mirroring the answer panel flow;
 		// use the popup's payload directly (selection may be gone by now)
 		if (this.file) {
@@ -1771,18 +1881,31 @@ export class PaperReaderView extends ItemView {
 	// ---- AI / LLM ----
 
 	/** Assemble the context text for AI requests per the configured level. */
-	private contextTextFor(payload: SelectionPayload): string {
+	private async openAiPanel(mode: PanelMode, payload: SelectionPayload): Promise<void> {
+		const request = ++this.aiPanelToken, document = this.documentToken;
+		try {
+			const context = await this.contextTextFor(payload);
+			if (this.closed || request !== this.aiPanelToken || document !== this.documentToken) return;
+			if (mode === "translate") this.panel.openTranslate(payload, context);
+			else if (mode === "explain") this.panel.openExplain(payload, context);
+			else this.panel.openAsk(payload, context);
+		} catch { if (!this.closed && document === this.documentToken) new Notice("无法读取 AI 上下文，请重试"); }
+	}
+
+	private async contextTextFor(payload: SelectionPayload): Promise<string> {
+		const token = this.documentToken;
 		const level = this.plugin.settings.aiContextLevel;
 		if (level === "selection") return payload.text;
-		const pageText = this.renderer.getPageText(payload.page) ?? payload.text;
+		const pageText = await this.renderer.getPageTextEnsured(payload.page) || payload.text;
 		if (level === "page") return pageText;
 		// full text, expanded around the current page within a char budget
 		const n = this.renderer.numPages;
 		let text = `[page ${payload.page}]\n${pageText}\n`;
 		for (let d = 1; d < n && text.length < FULL_TEXT_LIMIT; d++) {
+			if (token !== this.documentToken || this.closed) break;
 			for (const p of [payload.page - d, payload.page + d]) {
 				if (p < 1 || p > n) continue;
-				const t = this.renderer.getPageText(p);
+				const t = await this.renderer.getPageTextEnsured(p);
 				if (!t) continue;
 				text += `[page ${p}]\n${t}\n`;
 				if (text.length >= FULL_TEXT_LIMIT) break;
@@ -1797,7 +1920,7 @@ export class PaperReaderView extends ItemView {
 		payload: SelectionPayload,
 		answer: string
 	): Promise<void> {
-		if (mode !== "translate" || !this.file) return;
+		if (mode !== "translate" || !this.file || this.closed) return;
 		this.data.annotations.push(
 			annotationFromPayload(payload, {
 				type: "translation",

@@ -45,6 +45,15 @@ function check(label, cond, detail = "") {
 	check('三文件发布包加载并创建内嵌 Worker', bundledWorker);
 	const numPages = await page.evaluate(() => window.__h.loadPdf());
 	console.log(`PDF loaded, ${numPages} pages`);
+	const precise = await page.evaluate(() => {
+		const payload = window.__h.selectText("LandslideAgent", 0, 9);
+		const range = window.getSelection().getRangeAt(0).cloneRange();
+		range.collapse(false);
+		const bounds = document.querySelector(".pr-page").getBoundingClientRect();
+		return { text: payload.text, right: range.getClientRects()[0].left - bounds.left };
+	});
+	// Times-Roman PDF advances for “Landslide” total 3944/1000 em, at 20 pt.
+	check("逐字选区端点对应 PDF 字宽", precise.text === "Landslide" && Math.abs(precise.right - (40 + 78.88) * 1.5) < 0.5, JSON.stringify(precise));
 	const preview = await page.evaluate(() => window.__h.previewTitleSelection());
 	check("多行实时选区可见且不会叠色", preview.bands === 3 && !preview.overlaps && preview.nativeHidden && preview.fillVisible && preview.text.includes("LandslideAgent"), JSON.stringify(preview));
 	await page.evaluate(() => window.__h.clearSelectionPreview());
@@ -111,13 +120,37 @@ function check(label, cond, detail = "") {
 		for (const reverse of [false, true]) {
 			const count = await page.evaluate(({ scale, reverse }) => window.__h.underlineTitle(scale, reverse), { scale, reverse });
 			check(`三行标题各一条下划线 scale=${scale} reverse=${reverse}`, count === 3, `lines=${count}`);
+			if (!reverse) {
+				const b = await page.evaluate(() => {
+					window.__h.selectText("LandslideAgent", 0, 9);
+					const r = window.getSelection().getRangeAt(0).getBoundingClientRect();
+					return { x: r.x, y: r.y, right: r.right, height: r.height,
+						pageLeft: document.querySelector(".pr-page").getBoundingClientRect().left };
+				});
+				check(`缩放后逐字端点 scale=${scale}`, Math.abs(b.right - b.pageLeft - 118.88 * scale) < 0.5);
+				await page.evaluate(() => window.getSelection().removeAllRanges());
+				await page.mouse.move(b.x + 0.1, b.y + b.height / 2);
+				await page.mouse.down();
+				await page.mouse.move(b.right, b.y + b.height / 2, { steps: 12 });
+				await page.mouse.up();
+				const text = await page.evaluate(() => window.getSelection().toString());
+				check(`鼠标按字形边界拖选 scale=${scale}`, text === "Landslide", text);
+				if (scale === 1.5) {
+					await page.mouse.dblclick(b.x + 25, b.y + b.height / 2);
+					const word = await page.evaluate(() => window.getSelection().toString());
+					check("双击仍选择完整单词", word === "LandslideAgent", word);
+				}
+			}
 		}
 	}
 
 	// Existing annotations must not intercept a new native text selection.
 	await page.evaluate(() => window.__h.underlineTitle(1.5, false));
-	const titleSpan = page.locator(".textLayer span").filter({ hasText: "LandslideAgent" }).first();
-	const titleBox = await titleSpan.boundingBox();
+	const titleBox = await page.evaluate(() => {
+		window.__h.selectText("LandslideAgent", 0, 35);
+		const b = window.getSelection().getRangeAt(0).getBoundingClientRect();
+		return { x: b.x, y: b.y, width: b.width, height: b.height };
+	});
 	await page.evaluate(() => window.getSelection()?.removeAllRanges());
 	await page.mouse.move(titleBox.x + 10, titleBox.y + titleBox.height / 2);
 	await page.mouse.down();
@@ -212,6 +245,53 @@ function check(label, cond, detail = "") {
 	});
 	check("画笔预览与 SVG 导出保留路径、尺寸并拒绝无效数据", inkPreview.path === "M 4 4 L 24 24" && inkPreview.size === "120" && inkPreview.exported && inkPreview.rejected, JSON.stringify(inkPreview));
 
+	// Real reader orchestration (host APIs stubbed), not just the renderer module.
+	const window30 = await page.evaluate(() => window.__h.openReader());
+	check("30 页只渲染视口附近页面", window30.pages === 30 && window30.mounted.length <= 8 && window30.mounted.length > 0 && !window30.failures.length, JSON.stringify(window30));
+	const last = await page.evaluate(() => window.__h.readerNavigate(30));
+	check("远跳释放旧页面并加载末页", last.mounted.includes(30) && !last.mounted.includes(1) && last.mounted.length <= 8, JSON.stringify(last));
+	const windowSearch = await page.evaluate(async () => {
+		const v = window.__h.reader;
+		v.openSearch(); v.searchInputEl.value = "finalmarker"; await v.runSearch();
+		return { hits: v.searchHits.length, page: v.currentPage, marks: v.pagesEl.querySelectorAll(".pr-search-current").length };
+	});
+	check("窗口化后全文搜索能定位未读末页", windowSearch.hits === 1 && windowSearch.page === 30 && windowSearch.marks > 0, JSON.stringify(windowSearch));
+	const redraw = await page.evaluate(async () => {
+		const v = window.__h.reader;
+		const ann = { id: "window-note", type: "note", page: 30, rects: [{ x: 30, y: 220, width: 100, height: 12 }], text: "Synthetic", color: "yellow", note: "retained", createdAt: "", textOffset: 0, contextBefore: "", contextAfter: "" };
+		v.data.annotations.push(ann); await v.persistAndRefresh([30]);
+		await v.scrollToPage(1); await v.scrollToPage(30);
+		return v.pages.find(p => p.pageNumber === 30).wrapper.querySelectorAll('[data-annotation-id="window-note"]').length;
+	});
+	check("页面释放重建后标注仍显示", redraw > 0);
+	const layouts = await page.evaluate(async () => {
+		const v = window.__h.reader, results = [];
+		for (const mode of ["double-odd", "double-even", "single"]) {
+			await v.setLayoutMode(mode); await v.scrollToPage(7);
+			const p = v.pages.find(p => p.pageNumber === 7);
+			results.push({ mode, mounted: v.mountedPages.has(7), width: p.widthAtScale1, height: p.heightAtScale1, count: v.mountedPages.size });
+		}
+		return results;
+	});
+	check("双页/单页导航保留混合纸张尺寸", layouts.every(r => r.mounted && r.width === 792 && r.height === 612 && r.count <= 8), JSON.stringify(layouts));
+	await page.evaluate(async () => { await window.__h.reader.setLayoutMode("continuous"); });
+	const cancelled = await page.evaluate(async () => {
+		const v = window.__h.reader;
+		await Promise.all([v.scrollToPage(15), v.scrollToPage(28), v.scrollToPage(2)]);
+		await v.refreshPageWindow(); return window.__h.readerStats();
+	});
+	check("快速远跳不会挂回过期页面", cancelled.current === 2 && cancelled.mounted.includes(2) && !cancelled.mounted.includes(28) && !cancelled.failures.length, JSON.stringify(cancelled));
+	const zoomed = await page.evaluate(async () => { await window.__h.reader.zoomBy(10); return window.__h.readerStats(); });
+	check("高倍缩放单页像素预算有效", zoomed.maxPixels <= 8000000 && !zoomed.failures.length, JSON.stringify(zoomed));
+	const window300 = await page.evaluate(() => window.__h.openReader("/large.pdf"));
+	check("300 页首屏资源不随全文增长", window300.pages === 300 && window300.mounted.length <= 8 && window300.canvasBytes <= window30.canvasBytes * 1.1, JSON.stringify(window300));
+	await page.evaluate(async () => {
+		const v = window.__h.reader;
+		const pending = v.scrollToPage(299);
+		await v.onClose(); await pending;
+	});
+	const closed = await page.evaluate(async () => { const v = window.__h.reader; await window.__h.closeReader(); return { pages: v.pages.length, task: !!v.pageRender, children: v.children.length }; });
+	check("关闭释放页面与组件", closed.pages === 0 && !closed.task && closed.children === 0, JSON.stringify(closed));
 	await browser.close();
 	if (failures > 0) {
 		console.log(`\nACCEPTANCE FAILED (${failures} failures)`);
