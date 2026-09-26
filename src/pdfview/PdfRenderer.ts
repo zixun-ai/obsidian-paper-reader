@@ -249,7 +249,8 @@ export class PdfRenderer {
 				const original = precise.glyphItems.get(item)!;
 				const group = groups.get(original) ?? [];
 				group.push(div); groups.set(original, group);
-				const fontSize = Math.hypot(item.transform[2], item.transform[3]) * scale * outputScale;
+				const transform = item.transform as number[];
+				const fontSize = Math.hypot(transform[2], transform[3]) * scale * outputScale;
 				measure.font = `${fontSize}px ${div.style.fontFamily}`;
 				const width = measure.measureText(item.str).width;
 				if (width > 0) div.style.setProperty("--scale-x", String(item.width * scale * outputScale / width));

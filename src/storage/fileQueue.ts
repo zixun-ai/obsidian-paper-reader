@@ -3,7 +3,7 @@ const queues = new WeakMap<object, Map<string, Promise<unknown>>>();
 
 export async function withFileLock<T>(owner: object, path: string, action: () => Promise<T>): Promise<T> {
 	let paths = queues.get(owner);
-	if (!paths) queues.set(owner, paths = new Map());
+	if (!paths) queues.set(owner, paths = new Map<string, Promise<unknown>>());
 	const task = (paths.get(path) ?? Promise.resolve()).catch(() => {}).then(action);
 	paths.set(path, task);
 	try { return await task; }
