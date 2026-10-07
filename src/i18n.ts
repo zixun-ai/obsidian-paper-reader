@@ -28,7 +28,7 @@ export const ENGLISH: Readonly<Record<string, string>> = {
 	"接管 .pdf 文件（更改后需重载插件）": "Open PDF files with Paper Reader (reload the plugin after changing)",
 	"选中文字后弹出选区弹窗": "Show selection popup after selecting text",
 	"OpenAI 兼容接口地址": "OpenAI-compatible API endpoint",
-	"密钥明文保存在插件 data.json 中，请勿公开上传": "The key is stored as plain text in the plugin data.json. Do not upload it publicly.",
+	"在 Obsidian 的密钥存储中管理；插件仅保存密钥名称": "Manage the key in Obsidian's secret storage; the plugin only saves its name.",
 	"模型名": "Model name",
 	"如 deepseek-chat / gpt-4o-mini": "For example: deepseek-chat / gpt-4o-mini",
 	"测试连接": "Test connection",

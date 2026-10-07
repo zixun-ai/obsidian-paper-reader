@@ -134,7 +134,9 @@ class Harness {
 	async openReader(url = "/long.pdf"): Promise<unknown> {
 		await this.closeReader();
 		const adapter = new MemAdapter(), vault = vaultFor(adapter);
+		const secrets = new Map<string, string>();
 		const app = { vault: { ...vault, readBinary: async () => (await fixtureFetch(url)).arrayBuffer() },
+			secretStorage: { getSecret: (id: string) => secrets.get(id) ?? null, setSecret: (id: string, value: string) => { secrets.set(id, value); } },
 			workspace: { requestSaveLayout() {}, getActiveViewOfType: () => this.reader } };
 		const plugin = { app, settings: { ...DEFAULT_SETTINGS, readingPositions: {} }, async saveSettings() {} };
 		const view: any = new PaperReaderView({ app } as never, plugin as never);
@@ -489,8 +491,10 @@ class Harness {
 
 	async streamingReaderChecks(): Promise<Record<string, boolean>> {
 		const v = this.reader, settings = v.plugin.settings;
-		const prior = { llmBaseUrl: settings.llmBaseUrl, llmApiKey: settings.llmApiKey, llmModel: settings.llmModel };
-		Object.assign(settings, { llmBaseUrl: "https://mock.local/v1", llmApiKey: "test-only", llmModel: "mock" });
+		const prior = { llmBaseUrl: settings.llmBaseUrl, llmApiKeyId: settings.llmApiKeyId, llmModel: settings.llmModel };
+		const secretId = "paper-reader-e2e-test";
+		this.reader.plugin.app.secretStorage.setSecret(secretId, "test-only");
+		Object.assign(settings, { llmBaseUrl: "https://mock.local/v1", llmApiKeyId: secretId, llmModel: "mock" });
 		const oldFetch = window.fetch;
 		let controller: ReadableStreamDefaultController<Uint8Array>, signal: AbortSignal | null = null;
 		const encode = new TextEncoder();

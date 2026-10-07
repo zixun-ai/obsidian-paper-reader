@@ -70,6 +70,11 @@ export class PluginSettingTab {
 	constructor(..._args: unknown[]) {}
 }
 export class Setting {}
+export class SecretComponent {
+	constructor(_app: App, _containerEl: HTMLElement) {}
+	setValue(_id: string): this { return this; }
+	onChange(_cb: (id: string | null) => unknown): this { return this; }
+}
 export function setIcon(): void {}
 export async function requestUrl(options: { url: string; method?: string; headers?: Record<string, string>; body?: string }): Promise<any> {
 	const response = await fetch(options.url, {

@@ -31,7 +31,7 @@ import { buildPageContext } from "../llm/context";
 import { buildTranslateMessages } from "../llm/prompts";
 import { OutlineNode } from "../outline/OutlineTree";
 import { appendManyToNotes, appendToNotes, NotesEntry } from "../storage/notesWriter";
-import { ReadingPosition } from "../settings";
+import { ReadingPosition, llmConfig } from "../settings";
 import { SearchHit } from "../search/searchText";
 import { inkPreviewSvg } from "./AnnotationList";
 import {
@@ -160,11 +160,7 @@ export class PaperReaderView extends ItemView {
 		// plugin.app is guaranteed set; this.app on the view may not be
 		// injected yet when the constructor runs during workspace restore
 		this.store = new AnnotationStore(plugin.app, () => this.plugin.settings.annotationSuffix);
-		this.llm = new LlmClient(plugin.app, () => ({
-			baseUrl: this.plugin.settings.llmBaseUrl,
-			apiKey: this.plugin.settings.llmApiKey,
-			model: this.plugin.settings.llmModel,
-		}));
+		this.llm = new LlmClient(plugin.app, () => llmConfig(plugin.app, this.plugin.settings));
 
 		this.popup = new SelectionPopup({
 			getColors: () => this.plugin.settings.highlightColors,
@@ -1946,7 +1942,7 @@ export class PaperReaderView extends ItemView {
 		signal?: AbortSignal
 	): Promise<string> {
 		const s = this.plugin.settings;
-		if (!s.llmBaseUrl.trim() || !s.llmApiKey.trim() || !s.llmModel.trim()) {
+		if (!s.llmBaseUrl.trim() || !llmConfig(this.plugin.app, s).apiKey.trim() || !s.llmModel.trim()) {
 			throw new LlmError(
 				"config",
 				t("请先在 设置 → Paper Reader 中配置 LLM（Base URL / API Key / 模型名）")

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { loadTs, notices } from "./vmLoad";
 import * as readingPositions from "../src/pdfview/readingPositions";
+import { llmConfig } from "../src/settings";
 
 // ---- helpers ----
 
@@ -69,7 +70,12 @@ function makePlugin(files: FakeTFile[]) {
 			normalizePath: (p: string) => p,
 		},
 	});
+	const secrets = new Map<string, string>();
 	const app = {
+		secretStorage: {
+			getSecret: (id: string) => secrets.get(id) ?? null,
+			setSecret: (id: string, secret: string) => { secrets.set(id, secret); },
+		},
 		vault: {
 			adapter: { getResourcePath: (p: string) => p },
 			getAbstractFileByPath: (p: string) => files.find((f) => f.path === p) ?? null,
@@ -150,6 +156,37 @@ test("settings load copies positions and save retains the newest 200", async () 
 	assert.equal(Object.keys(saved.readingPositions).length, 200);
 	assert.equal(saved.readingPositions["19.pdf"], undefined);
 	assert.equal(saved.readingPositions["219.pdf"].updatedAt, 221);
+});
+
+test("legacy LLM API key migrates to Obsidian secret storage without persisting plaintext", async () => {
+	const plugin = makePlugin([]);
+	plugin.loadData = async () => ({ llmApiKey: "  sk-legacy  ", llmBaseUrl: "https://example.com/v1", llmModel: "test" });
+	let saved: any;
+	plugin.saveData = async (settings: any) => { saved = JSON.parse(JSON.stringify(settings)); };
+	await plugin.loadSettings();
+	const id = plugin.settings.llmApiKeyId;
+	assert.equal(id, "paper-reader-llm-api-key");
+	assert.equal(plugin.app.secretStorage.getSecret(id), "sk-legacy");
+	assert.equal(saved.llmApiKeyId, id);
+	assert.equal(saved.llmApiKey, undefined);
+	assert.equal(JSON.stringify(saved).includes("sk-legacy"), false);
+	assert.equal(llmConfig(plugin.app, plugin.settings).apiKey, "sk-legacy");
+	plugin.app.secretStorage.setSecret(id, "sk-rotated");
+	assert.equal(llmConfig(plugin.app, plugin.settings).apiKey, "sk-rotated");
+});
+
+test("existing secret reference takes precedence over a stale legacy key", async () => {
+	const plugin = makePlugin([]);
+	plugin.app.secretStorage.setSecret("user-key", "sk-current");
+	plugin.loadData = async () => ({ llmApiKey: "sk-old", llmApiKeyId: "user-key" });
+	let saved: any;
+	plugin.saveData = async (settings: any) => { saved = settings; };
+	await plugin.loadSettings();
+	assert.equal(plugin.settings.llmApiKeyId, "user-key");
+	assert.equal(llmConfig(plugin.app, plugin.settings).apiKey, "sk-current");
+	assert.equal(saved.llmApiKey, undefined);
+	plugin.settings.llmApiKeyId = "missing";
+	assert.equal(llmConfig(plugin.app, plugin.settings).apiKey, "");
 });
 
 test("vault deletion clears file and folder records and persists only when changed", async () => {

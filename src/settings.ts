@@ -1,8 +1,8 @@
 import { t } from "./i18n";
-import { App, Notice, PluginSettingTab } from "obsidian";
+import { App, Notice, PluginSettingTab, SecretComponent } from "obsidian";
 import type { SettingDefinitionItem } from "obsidian";
 import type PaperReaderPlugin from "./main";
-import { LlmClient } from "./llm/client";
+import { LlmClient, type LlmConfig } from "./llm/client";
 
 export const COLOR_KEYS = [
 	"yellow",
@@ -38,7 +38,7 @@ export interface PaperReaderSettings {
 	/** invert page colors in dark theme (zoom menu checkbox persists here) */
 	invertColorsInDark: boolean;
 	llmBaseUrl: string;
-	llmApiKey: string;
+	llmApiKeyId: string;
 	llmModel: string;
 	translateTargetLang: string;
 	aiContextLevel: AiContextLevel;
@@ -62,12 +62,20 @@ export const DEFAULT_SETTINGS: PaperReaderSettings = {
 	useAsDefaultPdfViewer: false,
 	invertColorsInDark: false,
 	llmBaseUrl: "",
-	llmApiKey: "",
+	llmApiKeyId: "",
 	llmModel: "",
 	translateTargetLang: "中文",
 	aiContextLevel: "full",
 	readingPositions: {},
 };
+
+export function llmConfig(app: App, settings: PaperReaderSettings): LlmConfig {
+	return {
+		baseUrl: settings.llmBaseUrl,
+		apiKey: settings.llmApiKeyId ? app.secretStorage.getSecret(settings.llmApiKeyId) ?? "" : "",
+		model: settings.llmModel,
+	};
+}
 
 const COLOR_LABELS: Record<HighlightColorKey, string> = {
 	yellow: t("黄色（重点）"),
@@ -111,24 +119,18 @@ export class PaperReaderSettingTab extends PluginSettingTab {
 			] },
 			{ type: "group", heading: "LLM", items: [
 				{ name: "Base URL", desc: t("OpenAI 兼容接口地址"), control: { type: "text", key: "llmBaseUrl", placeholder: "https://api.deepseek.com/v1" } },
-				{ name: "API Key", desc: t("密钥明文保存在插件 data.json 中，请勿公开上传"), render: (setting) => setting.addText((text) => {
-					text.inputEl.type = "password";
-					text.setPlaceholder("sk-...").setValue(this.plugin.settings.llmApiKey).onChange(async (value) => {
-						this.plugin.settings.llmApiKey = value.trim();
-						await this.plugin.saveSettings();
-					});
-				}) },
+				{ name: "API Key", desc: t("在 Obsidian 的密钥存储中管理；插件仅保存密钥名称"), render: (setting) => {
+					setting.addComponent((el) => new SecretComponent(this.app, el)
+						.setValue(this.plugin.settings.llmApiKeyId)
+						.onChange((id) => void this.setControlValue("llmApiKeyId", id ?? "")));
+				} },
 				{ name: t("模型名"), desc: t("如 deepseek-chat / gpt-4o-mini"), control: { type: "text", key: "llmModel", placeholder: "deepseek-chat" } },
 				{ name: t("测试连接"), desc: t("发送一个最小请求验证上述配置"), render: (setting) => {
 					const resultEl = setting.controlEl.createSpan({ cls: "pr-test-result" });
 					setting.addButton((button) => button.setButtonText(t("测试")).onClick(async () => {
 						button.setButtonText(t("测试中…")).setDisabled(true);
 						resultEl.setText("");
-						const client = new LlmClient(this.app, () => ({
-							baseUrl: this.plugin.settings.llmBaseUrl,
-							apiKey: this.plugin.settings.llmApiKey,
-							model: this.plugin.settings.llmModel,
-						}));
+						const client = new LlmClient(this.app, () => llmConfig(this.app, this.plugin.settings));
 						this.testAbort?.abort();
 						const abort = new AbortController(); this.testAbort = abort;
 						const result = await client.testConnection(abort.signal);
@@ -164,7 +166,7 @@ export class PaperReaderSettingTab extends PluginSettingTab {
 			this.plugin.settings.notesSuffix = value.trim() || DEFAULT_SETTINGS.notesSuffix;
 		} else if (key === "translateTargetLang" && typeof value === "string") {
 			this.plugin.settings.translateTargetLang = value.trim() || DEFAULT_SETTINGS.translateTargetLang;
-		} else if ((key === "llmBaseUrl" || key === "llmModel") && typeof value === "string") {
+		} else if ((key === "llmBaseUrl" || key === "llmModel" || key === "llmApiKeyId") && typeof value === "string") {
 			this.plugin.settings[key] = value.trim();
 		} else if ((key === "useAsDefaultPdfViewer" || key === "showFloatingToolbar") && typeof value === "boolean") {
 			this.plugin.settings[key] = value;

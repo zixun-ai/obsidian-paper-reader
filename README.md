@@ -32,7 +32,7 @@ Select text to annotate it. The pencil toggles ink mode; Escape exits. Use Cmd/C
 - Reading positions and settings are stored in the plugin's `data.json`.
 - Remote AI endpoints must use HTTPS; HTTP is allowed only for localhost, 127.0.0.1, and ::1. Data goes directly to the configured provider, not a developer-operated relay. AI answers stream via SSE and have a 120-second timeout; closing the popup/panel or switching documents cancels the request. The desktop transport uses Node HTTP(S) and does not inherit Chromium proxy settings.
 - AI is optional. It requires an endpoint, model, and API key you supply. The provider may require an account and charge for usage. On an explicit AI action, selected text, configured surrounding context (full-document context by default, up to 48,000 characters), questions, and conversation history are sent to that endpoint. The connection test also sends a request. Your provider's privacy terms apply.
-- The API key is stored in plaintext in `data.json`, not a secure keychain. Vault synchronization or backups that include this file may copy it. Never publish it or attach it to a bug report.
+- API keys are managed by Obsidian's Secret Storage; the plugin's `data.json` only stores the secret name. Existing keys in `data.json` are migrated on load (older synchronized copies and backups may still contain the plaintext key). Obsidian's Secret Storage is not a secure keychain; consult Obsidian's sync and backup behavior before relying on it for secrecy. Never publish keys or attach them to a bug report.
 - No access to files outside the vault is required for normal use.
 
 ## Limitations
@@ -70,6 +70,6 @@ Report bugs using [GitHub Issues](https://github.com/zixun-ai/obsidian-paper-rea
 
 首版仅支持桌面，要求 Obsidian 1.13.7 或更新版本；已验证 macOS，Windows/Linux 尚待实测。可在 **设置 → 第三方插件 → 浏览** 中搜索 **Paper Reader** 安装。默认不接管内置 PDF 阅读器，可右键 PDF 选择 **Open in Paper Reader**。
 
-标注单独保存在 PDF 旁的 `*.annotations.json`，不写入原 PDF；笔记导出到 `*.notes.md`。请一起备份。AI 操作会发送选中文字、配置的上下文和问答历史到你指定的接口，费用和数据处理由服务商决定。API Key 明文保存在插件 `data.json` 中，切勿公开上传。离线阅读无需 API，也没有遥测或广告。
+标注单独保存在 PDF 旁的 `*.annotations.json`，不写入原 PDF；笔记导出到 `*.notes.md`。请一起备份。AI 操作会发送选中文字、配置的上下文和问答历史到你指定的接口，费用和数据处理由服务商决定。API Key 由 Obsidian 的密钥存储管理，插件 `data.json` 仅保存密钥名称；旧版明文密钥会在加载时迁移（旧备份或同步副本可能仍含明文）。Obsidian 密钥存储不等同于系统安全钥匙串，切勿公开密钥。离线阅读无需 API，也没有遥测或广告。
 
 目前不支持 OCR、压感、橡皮擦及形状识别。旧回跳协议不自动迁移；完整限制见上文。提交问题时请避免附上私人论文、标注或密钥。

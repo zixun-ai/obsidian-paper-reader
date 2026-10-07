@@ -82,16 +82,29 @@ export default class PaperReaderPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		const data = (await this.loadData()) as Partial<PaperReaderSettings> | null;
+		const data = (await this.loadData()) as (Partial<PaperReaderSettings> & { llmApiKey?: string }) | null;
+		const { llmApiKey, ...storedSettings } = data ?? {};
 		this.settings = {
 			...DEFAULT_SETTINGS,
-			...data,
+			...storedSettings,
 			readingPositions: trimReadingPositions(data?.readingPositions),
 			highlightColors: {
 				...DEFAULT_SETTINGS.highlightColors,
 				...(data?.highlightColors ?? {}),
 			},
 		};
+		if (typeof llmApiKey === "string") {
+			if (llmApiKey.trim() && !this.settings.llmApiKeyId) {
+				const storage = this.app.secretStorage;
+				const preferredId = "paper-reader-llm-api-key";
+				const existing = storage.getSecret(preferredId);
+				const id = existing && existing !== llmApiKey.trim()
+					? `paper-reader-llm-${crypto.randomUUID()}` : preferredId;
+				storage.setSecret(id, llmApiKey.trim());
+				this.settings.llmApiKeyId = id;
+			}
+			await this.saveSettings();
+		}
 	}
 
 	async saveSettings(): Promise<void> {
