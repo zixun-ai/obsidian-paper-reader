@@ -1,8 +1,40 @@
 # Paper Reader
 
+[![Obsidian downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=%23483699&label=downloads&query=%24%5B%22paper-reader%22%5D.downloads&url=https%3A%2F%2Fraw.githubusercontent.com%2Fobsidianmd%2Fobsidian-releases%2Fmaster%2Fcommunity-plugin-stats.json)](https://community.obsidian.md/plugins/paper-reader) [![Latest release](https://img.shields.io/github/v/release/zixun-ai/obsidian-paper-reader)](https://github.com/zixun-ai/obsidian-paper-reader/releases/latest)
+
 [中文说明](#中文说明)
 
-Read PDF papers, annotate passages, draw ink, and export linked Markdown notes in Obsidian. Optional AI translation, explanations, and questions work with your own OpenAI-compatible endpoint.
+A dedicated reader built for PDF papers in Obsidian. Annotate passages, translate or explain selected text with optional AI, and export Markdown notes that link back to the source.
+
+**[Install from the Obsidian plugin directory](https://community.obsidian.md/plugins/paper-reader)** → Right-click a PDF → **Open in Paper Reader**. Reading and annotation work offline, with no AI setup, telemetry, or ads.
+
+[![Watch the 40-second Paper Reader demo](docs/assets/demo-poster.jpg)](https://zixun-ai.github.io/obsidian-paper-reader/paper-reader-demo.mp4)
+
+The 40-second demo has sound and uses the Chinese interface. It covers highlighting, translating and explaining a passage, exporting notes and following a link back to the PDF, ink, search, the outline, two-page view, and the files the plugin keeps beside each PDF. Like the recordings below, it uses an original synthetic paper and local mock AI responses.
+
+![Paper Reader in Obsidian: a highlighted PDF passage, the annotation sidebar, and an AI explanation](docs/assets/reader-overview.png)
+
+*Recorded in Obsidian with an original synthetic paper and a local mock AI response.*
+
+### Select and highlight
+
+Select a passage, then choose a highlight color. Your annotations stay beside the PDF.
+
+![Select a PDF passage and save a yellow highlight](docs/assets/highlight.gif)
+
+### Explain a passage with AI
+
+Select text and choose **AI explanation**. Use your own OpenAI-compatible endpoint, model, and API key.
+
+![Select a passage and receive a streaming Chinese explanation in the answer panel](docs/assets/ai-explanation.gif)
+
+*The recording uses a local mock AI response and an original synthetic paper. It demonstrates the interface; output quality and speed depend on your provider.*
+
+### Export notes and return to the source
+
+Export annotations to Markdown. Click the source link in a note to return to its PDF passage.
+
+![Export a highlight to a Markdown note and follow its link back to the PDF](docs/assets/notes-backlink.gif)
 
 ## Features
 
@@ -66,7 +98,9 @@ Report bugs using [GitHub Issues](https://github.com/zixun-ai/obsidian-paper-rea
 
 ## 中文说明
 
-在 Obsidian 中阅读 PDF 论文，支持文字标注、批注、鼠标画笔、撤销重做、全文搜索、阅读位置恢复和带来源回跳的 Markdown 笔记导出。AI 翻译、解释和问答为可选功能，使用你自己的兼容接口和 API Key。
+为读论文而设计的独立 PDF 阅读器：划词标注、批注、鼠标画笔、全文搜索、阅读位置恢复，以及带来源回跳的 Markdown 笔记导出。AI 翻译、解释和问答为可选功能，使用你自己的兼容接口和 API Key。上方截图和动图展示了完整流程；AI 动图使用本地模拟回答，论文为原创演示文档。
+
+[观看 40 秒演示视频](https://zixun-ai.github.io/obsidian-paper-reader/paper-reader-demo.mp4)（中文界面，有声音；论文为原创演示文档，AI 回答为本地模拟）。
 
 首版仅支持桌面，要求 Obsidian 1.13.7 或更新版本；已验证 macOS，Windows/Linux 尚待实测。可在 **设置 → 第三方插件 → 浏览** 中搜索 **Paper Reader** 安装。默认不接管内置 PDF 阅读器，可右键 PDF 选择 **Open in Paper Reader**。
 
