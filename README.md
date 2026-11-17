@@ -8,6 +8,10 @@ A dedicated reader built for PDF papers in Obsidian. Annotate passages, translat
 
 **[Install from the Obsidian plugin directory](https://community.obsidian.md/plugins/paper-reader)** → Right-click a PDF → **Open in Paper Reader**. Reading and annotation work offline, with no AI setup, telemetry, or ads.
 
+[![Watch the 40-second Paper Reader demo](docs/assets/demo-poster.jpg)](https://zixun-ai.github.io/obsidian-paper-reader/paper-reader-demo.mp4)
+
+The 40-second demo has sound and uses the Chinese interface. It covers highlighting, translating and explaining a passage, exporting notes and following a link back to the PDF, ink, search, the outline, two-page view, and the files the plugin keeps beside each PDF. Like the recordings below, it uses an original synthetic paper and local mock AI responses.
+
 ![Paper Reader in Obsidian: a highlighted PDF passage, the annotation sidebar, and an AI explanation](docs/assets/reader-overview.png)
 
 *Recorded in Obsidian with an original synthetic paper and a local mock AI response.*
@@ -95,6 +99,8 @@ Report bugs using [GitHub Issues](https://github.com/zixun-ai/obsidian-paper-rea
 ## 中文说明
 
 为读论文而设计的独立 PDF 阅读器：划词标注、批注、鼠标画笔、全文搜索、阅读位置恢复，以及带来源回跳的 Markdown 笔记导出。AI 翻译、解释和问答为可选功能，使用你自己的兼容接口和 API Key。上方截图和动图展示了完整流程；AI 动图使用本地模拟回答，论文为原创演示文档。
+
+[观看 40 秒演示视频](https://zixun-ai.github.io/obsidian-paper-reader/paper-reader-demo.mp4)（中文界面，有声音；论文为原创演示文档，AI 回答为本地模拟）。
 
 首版仅支持桌面，要求 Obsidian 1.13.7 或更新版本；已验证 macOS，Windows/Linux 尚待实测。可在 **设置 → 第三方插件 → 浏览** 中搜索 **Paper Reader** 安装。默认不接管内置 PDF 阅读器，可右键 PDF 选择 **Open in Paper Reader**。
 
